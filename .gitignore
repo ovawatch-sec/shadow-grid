@@ -1,5 +1,3 @@
-# Ignore everything
-*
 
 # Except these files
 !stet.py
@@ -12,3 +10,5 @@
 !core/*
 !modules/*
 !data/*
+
+output/*
