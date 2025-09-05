@@ -1,217 +1,194 @@
-import argparse
-from queue import Queue
 import os
-import shutil
-import sys
 import subprocess
-import socket
-import re
-import ipaddress
-import threading
-import urllib.request
-# application class
+import fnmatch
+from pathlib import Path
+import shutil
 
-class AppArg:
-    def __init__(self, domain='',file='',threads=5):
-        self._domain = domain
-        self._file=file
-        self._threads=threads
+# =========================
+# Configuration
+# =========================
+USERNAME = "theblxckcicada"
+CUSTOM_UA = f"Intigriti-{USERNAME}- Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.212 Safari/537.36"
+DEFAULT_HEADER = f"X-Bug-Bounty: {USERNAME}"
 
-    @property
-    def threads(self):
-        return self._threads
-    @property
-    def file(self):
-        return self._file
-    @property
-    def domain(self):
-        return self._domain
+BASE_OUTPUT = Path("recon_output")
+BASE_OUTPUT.mkdir(exist_ok=True)
 
+TOOLS = {
+    "assetfinder": "go install github.com/tomnomnom/assetfinder@latest",
+    "subfinder": "go install github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest",
+    "amass": "go install github.com/owasp-amass/amass/v4/...@master",
+    "httpx": "go install github.com/projectdiscovery/httpx/cmd/httpx@latest",
+    "gowitness": "go install github.com/sensepost/gowitness@latest"
+}
 
+# =========================
+# Banner
+# =========================
+def banner():
+    print("""
+=======================================
+      Recon Automation Framework
+      Author: theblxckcicada
+=======================================
+    """)
 
-def create_directories_if_not_exist(*directories):
-    for directory in directories:
-        if not os.path.exists(directory):
-            os.makedirs(directory)
+# =========================
+# Tool Check & Installer
+# =========================
+def check_and_install_tools():
+    print("[*] Checking required tools...")
+    for tool, install_cmd in TOOLS.items():
+        if shutil.which(tool) is None:
+            print(f"[!] {tool} not found. Installing...")
+            try:
+                subprocess.run(install_cmd, shell=True, check=True)
+                print(f"[+] {tool} installed successfully.")
+            except subprocess.CalledProcessError:
+                print(f"[!] Failed to install {tool}. Please install manually: {install_cmd}")
+        else:
+            print(f"[+] {tool} is installed.")
 
-
-
-def create_files_if_not_exist(*files):
-    for file_path in files:
-        if not os.path.exists(file_path):
-            with open(file_path, "w") as file:
-                file.write("")  # Write an empty string to the file
-
-
-RED="\033[1;31m"
-BLUE="\033[1;34m"
-RESET="\033[0m"
-GREEN="\033[1;32m"
-PURPLE="\033[1;35m"
-ORANGE="\033[1;33m"
-PINK="\033[1;35m"
-
-
-# script banner
-def display_banner():
-	print(f"""{GREEN}
- █████╗ ██████╗        ██████╗ ██╗   ██╗ █████╗ ██╗    ██╗ █████╗ ████████╗ ██████╗██╗  ██╗
-██╔══██╗██╔══██╗      ██╔═══██╗██║   ██║██╔══██╗██║    ██║██╔══██╗╚══██╔══╝██╔════╝██║  ██║
-███████║██║  ██║█████╗██║   ██║██║   ██║███████║██║ █╗ ██║███████║   ██║   ██║     ███████║
-██╔══██║██║  ██║╚════╝██║   ██║╚██╗ ██╔╝██╔══██║██║███╗██║██╔══██║   ██║   ██║     ██╔══██║
-██║  ██║██████╔╝      ╚██████╔╝ ╚████╔╝ ██║  ██║╚███╔███╔╝██║  ██║   ██║   ╚██████╗██║  ██║
-╚═╝  ╚═╝╚═════╝        ╚═════╝   ╚═══╝  ╚═╝  ╚═╝ ╚══╝╚══╝ ╚═╝  ╚═╝   ╚═╝    ╚═════╝╚═╝  ╚═╝
-        {ORANGE}|__ by - {ORANGE}theblxckcicada ({PURPLE}https://ovawatch.co.za{PURPLE}{ORANGE}) __|{GREEN}{RESET}{display_disclaimer()}""")
-
-def display_disclaimer():
-     return f"""
-           {ORANGE}| {RED}Disclaimer{ORANGE} |                                                                                       |
-                        | {RED}Usage of this pentest tool implies understanding and acceptance of potential risks,   {ORANGE}|
-                        | {RED}and the user assumes full responsibility for their actions.                           {ORANGE}|
-           {RESET}"""
-
-# argument management
-def get_parser():
-    parser = argparse.ArgumentParser(description='Script description')
-    parser.add_argument("-d", "--domain", help="Single domain to scan(e.g google.com)")
-    parser.add_argument('-f', '--file', help='Target hosts file')
-    parser.add_argument('-t', '--threads',type=int, default=5,  help='Number of threads to use (default = 5)')
-
-    return parser
-
-def get_args(parser):
-	    return parser.parse_args()
+# =========================
+# Utility Functions
+# =========================
+def run_command(cmd, outfile=None):
+    """Run a system command and optionally write output to file."""
+    print(f"[+] Running: {' '.join(cmd)}")
+    result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+    if outfile:
+        with open(outfile, "w") as f:
+            f.write(result.stdout)
+    return result.stdout.splitlines()
 
 
-def args_to_app_args(args):
-    return AppArg(**vars(args))
-
-# get arguments
-parser = get_parser()
-arguments = get_args(parser)
-app_args = args_to_app_args(arguments)
-
-# variables
-targets = []
-
-def validate_arguments():
-    if not app_args.domain and not app_args.file :
-        parser.print_help()
-        sys.exit(1)
-
-def run_command(message):
-    try:
-        command = subprocess.Popen(
-                        message, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        output = command.stdout.read() + command.stderr.read()
-        return output.decode(encoding='cp1252')
-    except Exception as error:
-        return error
+def load_out_of_scope(filepath):
+    """Load out-of-scope domains/wildcards from file."""
+    if not filepath or not Path(filepath).exists():
+        return []
+    with open(filepath) as f:
+        return [line.strip() for line in f if line.strip()]
 
 
-def save_to_file(destination,results):
-    with open(destination,'w') as file:
-            file.write(results)
- 
+def filter_out_of_scope(domains, oos_list):
+    """Filter domains that match any out-of-scope entry."""
+    filtered = []
+    for d in domains:
+        if not any(fnmatch.fnmatch(d, pattern) for pattern in oos_list):
+            filtered.append(d)
+    return list(set(filtered))
+
+# =========================
+# Recon Steps
+# =========================
+def run_assetfinder(domain):
+    return run_command(["assetfinder", "--subs-only", domain])
 
 
-def remove_empty_files_and_directories(directory):
-    # First pass: Remove empty files
-    for root, dirs, files in os.walk(directory):
-        for file in files:
-            filepath = os.path.join(root, file)
-            if os.path.getsize(filepath) == 0:
-                os.remove(filepath)
-
-    # Second pass: Remove empty directories (bottom-up to avoid errors)
-    for root, dirs, files in os.walk(directory, topdown=False):
-        for dir in dirs:
-            dirpath = os.path.join(root, dir)
-            if not os.listdir(dirpath):  # directory is now empty
-                os.rmdir(dirpath)
-    
+def run_subfinder(domain):
+    return run_command(["subfinder", "-silent", "-d", domain])
 
 
-def remove_duplicate_lines(filename, output_file=None):
-    seen = set()
-    output_file = output_file or filename  # overwrite input file if no output specified
+def run_amass(domain):
+    return run_command(["amass", "enum", "-passive", "-d", domain])
 
-    with open(filename, 'r') as f:
-        lines = f.readlines()
 
-    unique_lines = []
-    for line in lines:
-        line_strip = line.strip()
-        if line_strip not in seen:
-            seen.add(line_strip)
-            unique_lines.append(line_strip)
+def run_httpx(domains, output_dir, rate_limit, custom_headers):
+    alive_file = output_dir / "alive.txt"
+    input_file = output_dir / "all_subs.txt"
 
-    with open(output_file, 'w') as f:
-        for line in unique_lines:
-            f.write(line + '\n')
+    with open(input_file, "w") as f:
+        f.write("\n".join(domains))
 
-# Worker function
-def worker():
-    while True:
-        target = q.get()
-        if target is None:
-            break
-        run_tools(target)
-        q.task_done()
-
-# Function to run tools per target
-def run_tools(target):
-    print(f"[+] Running tools for: {target}")
-
-    commands = [
-        f"subfinder -d {target} -o subfinder-{target}.txt",
-        f"assetfinder -subs-only {target} > assetfinder-{target}.txt",
-        f"sublist3r -d {target} -o sublist3r-{target}.txt"
+    cmd = [
+        "httpx",
+        "-silent",
+        "-l", str(input_file),
+        "-user-agent", CUSTOM_UA,
+        "-rate-limit", str(rate_limit),
+        "-o", str(alive_file)
     ]
 
-    for cmd in commands:
-        run_command(cmd)
+    # Add custom headers
+    for header in custom_headers:
+        cmd.extend(["-H", header])
+
+    run_command(cmd)
+
+    return [line.strip() for line in open(alive_file)]
+
+
+def run_gowitness(alive_domains, output_dir):
+    input_file = output_dir / "alive.txt"
+    run_command(["gowitness", "file", "-f", str(input_file), "--timeout", "10", "--disable-verify", "-P", str(output_dir / "screenshots")])
+
+# =========================
+# Main Workflow
+# =========================
+def recon(domain, out_of_scope_file=None, rate_limit=20, custom_headers=None):
+    print(f"[*] Starting recon for {domain}")
+    
+    if custom_headers is None:
+        custom_headers = [DEFAULT_HEADER]
+
+    # Prepare domain-specific folder
+    output_dir = BASE_OUTPUT / domain
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Load out-of-scope
+    oos_list = load_out_of_scope(out_of_scope_file)
+
+    # Run tools
+    subs = []
+    subs += run_assetfinder(domain)
+    subs += run_subfinder(domain)
+    subs += run_amass(domain)
+
+    # Filter OOS
+    subs = filter_out_of_scope(subs, oos_list)
+
+    # Save raw subdomains
+    all_file = output_dir / "all_subs.txt"
+    with open(all_file, "w") as f:
+        f.write("\n".join(subs))
+
+    print(f"[+] Found {len(subs)} unique subdomains (after filtering)")
+
+    # Alive check
+    alive = run_httpx(subs, output_dir, rate_limit, custom_headers)
+    print(f"[+] {len(alive)} alive subdomains")
+
+    # Screenshots
+    if alive:
+        run_gowitness(alive, output_dir)
+
+    print(f"[+] Recon finished for {domain}. Results saved in {output_dir}/")
+
 
 if __name__ == "__main__":
-    display_banner()
-    try:
-        validate_arguments()
+    import argparse
 
-        if app_args.file:
-            with open(app_args.file, "r") as f:
-                targets.extend([line.strip() for line in f if isinstance(line.strip(),str)])
+    banner()
 
-        if app_args.domain:
-            targets.append(app_args.domain)
-        
-        if not targets:
-            print("{RED}[-] No targets specified. Use -d or -f.{RESET}")
-            parser.print_help()
-            sys.exit(1)
+    parser = argparse.ArgumentParser(description="Recon automation script")
+    parser.add_argument("target", help="Target domain or file with domains")
+    parser.add_argument("--oos", help="File with out-of-scope domains/wildcards")
+    parser.add_argument("--rate", type=int, default=20, help="Max requests per second (default 20)")
+    parser.add_argument("--header", action="append", help="Custom header(s) to add (can be used multiple times)")
+    parser.add_argument("--skip-install", action="store_true", help="Skip tool installation check")
+    args = parser.parse_args()
 
-        # Get cleaned targets and remove empty strings
-        targets = [item for item in targets if isinstance(item, str)]
-        
-        # Queue and threads
-        q = Queue()
-        threads = []
+    if not args.skip_install:
+        check_and_install_tools()
 
-        for _ in range(app_args.threads):
-            thread = threading.Thread(target=worker)
-            thread.start()
-            threads.append(thread)
+    target_path = Path(args.target)
+    domains = []
 
-        # Enqueue targets
-        for target in targets:
-            q.put(target)
+    if target_path.exists():
+        with open(target_path) as f:
+            domains = [line.strip() for line in f if line.strip()]
+    else:
+        domains = [args.target]
 
-        # Wait for all tasks to be processed
-        q.join()
-
-        # Stop threads
-        for _ in threads:
-            q.put(None)
-        for thread in threads:
-            thread.join()
-    except Exception as e:
-        print(f"{RED}[-] {str(e)}{RESET}")
+    for d in domains:
+        recon(d, args.oos, args.rate, args.header)
