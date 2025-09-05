@@ -5,6 +5,10 @@
 !stet.py
 !README
 !README.md
+!Readme.md
 !.gitignore
 !bug-ovawatch.py
 !bug-old.py
+!core/*
+!modules/*
+!data/*
