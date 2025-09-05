@@ -6,7 +6,7 @@ if __name__ == '__main__':
     import modules.alive_check as alive
     import modules.screenshots as screenshots
     from modules import historical_urls as hist
-    from core.colors import RED,RESET
+    from core.colors import RED,RESET,GREEN
     from pathlib import Path
 
     banner()
@@ -90,15 +90,13 @@ if __name__ == '__main__':
             f.write("\n".join(sorted(all_subs)))
 
         # get alive sub domains
-        alive_domains = alive.run_httpx(subs, output_dir, args.rate, args.header or [])
+        alive_domains = alive.run_httpx(all_subs, output_dir, args.rate, args.header or [])
 
         if alive_domains:
             screenshots.run_gowitness(alive_domains, output_dir)
         # fetch historical urls
         if 'waybackurls' not in skip_tools:
             hist.run_waybackurls(domain, output_dir)
-        if 'gau' not in skip_tools:
-            hist.run_gau(domain, output_dir)
     
     print(f"""
 ============================================================================================================================================================

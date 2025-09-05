@@ -11,7 +11,10 @@
 !modules/*
 !data/*
 
-output/*
-*.pyc 
-*.pyo
-*.pyd
+
+**/__pycache/
+output/
+pycache/
+**/*.pyc 
+**/*.pyo
+**/*.pyd

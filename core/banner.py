@@ -6,6 +6,7 @@ def disclaimer():
       {PURPLE}Bug-Ovawatch Recon Automation Framework{RESET}
       Author: theblxckcicada
       Website: https://ovawatch.co.za
+      Github: https://github.com/theblxckcicada/bug-ovawatch
       {RED}Disclaimer: Usage of this tool implies understanding and acceptance of potential risks and the user assumes full responsibility for their actions.{RESET}
 ============================================================================================================================================================
     """)
