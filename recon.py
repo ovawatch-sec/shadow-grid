@@ -90,7 +90,7 @@ if __name__ == '__main__':
             f.write("\n".join(sorted(all_subs)))
 
         # get alive sub domains
-        alive_domains = alive.run_httpx(all_subs, output_dir, args.rate, args.header or [])
+        alive_domains = alive.run_httprobe(all_subs, output_dir, args.rate, args.header or [])
 
         if alive_domains:
             screenshots.run_gowitness(alive_domains, output_dir)

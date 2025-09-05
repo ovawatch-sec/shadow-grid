@@ -1,4 +1,4 @@
-def run_httpx(domains, output_dir, rate_limit, custom_headers):
+def run_httprobe(domains, output_dir, rate_limit, custom_headers):
     from core.utils import run_command
     import subprocess
     alive_file = output_dir / 'alive.txt'
