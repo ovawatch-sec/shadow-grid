@@ -18,3 +18,4 @@ pycache/
 **/*.pyc 
 **/*.pyo
 **/*.pyd
+logs.txt
