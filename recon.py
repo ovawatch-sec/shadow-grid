@@ -6,6 +6,7 @@ if __name__ == '__main__':
     import argparse
     from core.banner import banner
     from core.utils import load_out_of_scope, filter_out_of_scope
+    import modules.vuln_scan as vuln_scan
     import modules.subdomain_enum as enum
     import modules.alive_check as alive
     import modules.screenshots as screenshots
@@ -16,13 +17,13 @@ if __name__ == '__main__':
     banner()
     try:
         parser = argparse.ArgumentParser(description='Recon Automation Framework')
-        parser.add_argument('--target', help='Domain or file with domains')
+        parser.add_argument('-t','--target', help='Domain or file with domains')
         parser.add_argument('--oos', help='File with out-of-scope domains/wildcards')
         parser.add_argument('--rate', type=int, default=2, help='Max requests per second (default=2)')
         parser.add_argument('--header', action='append', help='Custom header(s)')
         parser.add_argument('--user-agent', help='Custom User Agent')
-        parser.add_argument('--output', default='output', help='Results output file')
-        parser.add_argument('--list',action='store_true',help='List of tools used')
+        parser.add_argument('-o','--output', default='output', help='Results output file')
+        parser.add_argument('-l','--list',action='store_true',help='List of tools used')
         parser.add_argument(
         '--skip-tools',
         help='Comma-separated list of tools to skip (e.g., amass,httprobe,gowitness)',
@@ -31,7 +32,7 @@ if __name__ == '__main__':
         args = parser.parse_args()
 
         # Get the tools list 
-        tools_list = ['assetfinder','subfinder','sublist3r','amass','httprobe','crt.sh','waybackurls']
+        tools_list = ['assetfinder','subfinder','sublist3r','amass','httprobe','crt.sh','waybackurls','gowitness','nuclei']
 
         if args.list:
             print(f"{PURPLE}[!] {BLUE}{', '.join(tools_list)}{RESET}")
@@ -136,6 +137,10 @@ if __name__ == '__main__':
             # fetch historical urls
             if 'waybackurls' not in skip_tools:
                 hist.run_waybackurls(domain, output_dir)
+            
+            # check for vulnerabilities using nuclei 
+            if 'nuclei' not in skip_tools:
+                vuln_scan.run_nuclei(all_file,output_dir)
         
         print(f"""
 ============================================================================================================================================================
