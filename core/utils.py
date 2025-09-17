@@ -3,8 +3,10 @@ from .colors import RED, GREEN, RESET, PURPLE, BLUE, ORANGE, PINK
 
 def run_command(cmd, outfile=None):
     import subprocess
-    print(f"{GREEN}[+] Running: {' '.join(cmd)}{RESET}")
-    result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+    print(f"""
+{GREEN}[+] Running: {' '.join(cmd)}{RESET}
+""")
+    result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True,shell=True)
     if outfile:
         with open(outfile, 'w') as f:
             f.write(result.stdout)

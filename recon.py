@@ -1,3 +1,4 @@
+import sys
 from core.colors import PURPLE
 
 
@@ -15,26 +16,34 @@ if __name__ == '__main__':
     banner()
     try:
         parser = argparse.ArgumentParser(description='Recon Automation Framework')
-        parser.add_argument('target', help='Domain or file with domains')
+        parser.add_argument('--target', help='Domain or file with domains')
         parser.add_argument('--oos', help='File with out-of-scope domains/wildcards')
-        parser.add_argument('--rate', type=int, default=2, help='Max requests per second')
+        parser.add_argument('--rate', type=int, default=2, help='Max requests per second (default=2)')
         parser.add_argument('--header', action='append', help='Custom header(s)')
         parser.add_argument('--user-agent', help='Custom User Agent')
+        parser.add_argument('--output', default='output', help='Results output file')
+        parser.add_argument('--list',action='store_true',help='List of tools used')
         parser.add_argument(
         '--skip-tools',
-        help='Comma-separated list of tools to skip (e.g., amass,httpx,gowitness)',
+        help='Comma-separated list of tools to skip (e.g., amass,httprobe,gowitness)',
         default=''
     )
         args = parser.parse_args()
+
+        # Get the tools list 
+        tools_list = ['assetfinder','subfinder','sublist3r','amass','httprobe','crt.sh','waybackurls']
+
+        if args.list:
+            print(f"{PURPLE}[!] {BLUE}{', '.join(tools_list)}{RESET}")
+            sys.exit(0)
+
+        # Get Skipped tools
         skip_tools = [t.strip().lower() for t in args.skip_tools.split(',') if t.strip()]
 
         # Print skipped tools if any
         if skip_tools:
-            skipped = ", ".join(skip_tools)
-            print(f"""
-        {RED}[!] Skipped tools:{RESET} {BLUE}{skipped}{RESET}
-============================================================================================================================================================
-        """)
+            skipped = ", ".join(skip_tools) 
+            print(f"{PURPLE}[!] Skipped tools:{RESET} {BLUE}{skipped}{RESET}")
         target_path = Path(args.target)
         domains = []
         if target_path.exists():
@@ -44,7 +53,8 @@ if __name__ == '__main__':
             domains = [args.target]
 
         for domain in domains:
-            output_dir = Path('output') / domain
+            output_dir_name = args.output
+            output_dir = Path(output_dir_name) / domain
             output_dir.mkdir(parents=True, exist_ok=True)
             oos_list = load_out_of_scope(args.oos)
 
@@ -84,6 +94,14 @@ if __name__ == '__main__':
                 with open(am_file, 'r') as f:
                     all_subs.update(line.strip() for line in f)
 
+            if 'crt.sh' not in skip_tools:
+                crt_file = output_dir / "crt.sh.txt"
+                tools_results['crt.sh'] = enum.run_crt(domain, outfile=crt_file)
+
+                # read the content of the file
+                with open(crt_file, 'r') as f:
+                    all_subs.update(line.strip() for line in f)
+
             # Apply out-of-scope filter
             all_subs = filter_out_of_scope(all_subs,oos_list)
             # Save the final merged subdomains
@@ -92,25 +110,28 @@ if __name__ == '__main__':
                 f.write("\n".join(sorted(all_subs)))
 
             # get alive sub domains
-            alive.run_httprobe(output_dir)
-            
-            # read alive urls 
-            alive_urls = output_dir / 'alive_urls.txt'
-            alive_domains = []
+            if 'httprobe' not in skip_tools:
+                alive_urls = output_dir / 'alive_urls.txt'
+                alive.run_httprobe(all_file,alive_urls)
 
-            # Read alive urls and clean them
-            with open(alive_urls, 'r') as f:
-                for line in f:
-                    domain = line.strip().replace('https://', '').replace('http://', '')
-                    alive_domains.append(domain)
+                # read alive urls 
+                alive_domains = set()
 
-            # Save the alive domains
-            alive_file = output_dir / 'alive_subs.txt'
-            with open(alive_file, 'w') as f:
-                f.write("\n".join(alive_domains))
+                # Read alive urls and clean them
+                with open(alive_urls, 'r') as f:
+                    for line in f:
+                        domain = line.strip().replace('https://', '').replace('http://', '')
+                        alive_domains.add(domain)
 
-            if alive_domains:
-                screenshots.run_gowitness(alive_domains, output_dir)
+                # Save the alive domains
+                alive_file = output_dir / 'alive_subs.txt'
+                with open(alive_file, 'w') as f:
+                    f.write("\n".join(alive_domains))
+
+                if alive_domains and 'gowitness' not in skip_tools:
+                    screenshots.run_gowitness(alive_domains, output_dir)
+            elif 'gowitness' not in skip_tools:
+                screenshots.run_gowitness(all_subs, output_dir)
 
             # fetch historical urls
             if 'waybackurls' not in skip_tools:
@@ -118,18 +139,18 @@ if __name__ == '__main__':
         
         print(f"""
 ============================================================================================================================================================
-        {GREEN}[+] Recon Completed {RESET}
+{GREEN}[+] Recon Completed {RESET}
 ============================================================================================================================================================
         """)
     except KeyboardInterrupt as e:
         print(f"""
 ============================================================================================================================================================
-        {RED}[-] Keyboard Interrupt Error Occured!!! {RESET}
+{RED}[-] Keyboard Interrupt Error Occured!!! {RESET}
 ============================================================================================================================================================
         """)
-    except:
+    except Exception as e:
         print(f"""
 ============================================================================================================================================================
-        {RED}[-] An Error Occured!!! {RESET}
+{RED}[-] An Error Occured!!! {e}{RESET}
 ============================================================================================================================================================
         """)
