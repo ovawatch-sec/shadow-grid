@@ -26,7 +26,7 @@ if __name__ == '__main__':
         parser.add_argument('--http-proto', default=443,type=int, help='Request protocol')
         parser.add_argument('-l','--list',action='store_true',help='List of tools used')
         parser.add_argument('--fuzz',default=False,action='store_true',help='Enable subdomain fuzzing')
-        parser.add_argument('-w','--wordlist',default='',help='Wordlist')
+        parser.add_argument('-w','--wordlist',default=None,help='Wordlist')
         parser.add_argument('--dashboard',default=True,action='store_true',help='Enable dashboard for the results at http://localhost:8000/app')
         parser.add_argument(
         '--skip-tools',

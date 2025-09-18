@@ -20,3 +20,4 @@ pycache/
 **/*.pyd
 logs.txt
 targets.txt
+**/*.state

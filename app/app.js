@@ -338,22 +338,45 @@ async function fetchFuzzingFile(url) {
         if (!response.ok) return [];
         const text = await response.text();
         
-        // Parse NDJSON format
-        return text.split('\n')
-            .filter(line => line.trim().length > 0)
-            .map(line => {
-                try {
-                    return JSON.parse(line);
-                } catch (parseError) {
-                    console.warn('Failed to parse fuzzing line:', line, parseError);
-                    return null;
-                }
-            })
-            .filter(item => item !== null && item.kind !== 'configuration');
+        // Parse the text format (not JSON)
+        
+        return parseFuzzingText(text);
     } catch (error) {
         console.warn(`Failed to fetch fuzzing file ${url}:`, error);
         return [];
     }
+}
+
+// Parse fuzzing text data
+function parseFuzzingText(text) {
+    const lines = text.split('\n');
+    const results = [];
+    console.log(text)
+    for (const line of lines) {
+        if (!line.trim()) continue;
+        
+        // Skip configuration lines and MSG lines
+        if (line.startsWith('Configuration') || line.startsWith('MSG')) continue;
+        
+        // Parse the fuzzing result line
+        // Format: STATUS METHOD LINESl WORDSw CHARSc URL [=> REDIRECT]
+        const match = line.match(/^(\d+)\s+([A-Z]+)\s+(\d+)l\s+(\d+)w\s+(\d+)c\s+(\S+)(?:\s+=>\s+(\S+))?/);
+        
+        if (match) {
+            const [, status, method, lines, words, chars, url, redirect] = match;
+            results.push({
+                status: parseInt(status),
+                method,
+                lines: parseInt(lines),
+                words: parseInt(words),
+                chars: parseInt(chars),
+                url,
+                redirect: redirect || null
+            });
+        }
+    }
+    
+    return results;
 }
 
 // Process subdomains from various sources
@@ -512,6 +535,12 @@ function renderDomainData(domain) {
         waybackUrlCount += data.waybackUrls[sub].length;
     }
     
+    // Count fuzzing results
+    let fuzzingResultCount = 0;
+    for (const sub in data.fuzzingResults) {
+        fuzzingResultCount += data.fuzzingResults[sub].length;
+    }
+    
     // Render the domain data
     domainDataEl.innerHTML = `
         <div class="domain-header">
@@ -546,7 +575,7 @@ function renderDomainData(domain) {
             </div>
             <div class="card">
                 <h3>Fuzzing Results</h3>
-                <div class="value">${Object.keys(data.fuzzingResults).length}</div>
+                <div class="value">${fuzzingResultCount}</div>
             </div>
         </div>
         
@@ -602,7 +631,7 @@ function renderDomainData(domain) {
         
         <div class="panel">
             <div class="panel-header" id="fuzzing-header">
-                <h2>Fuzzing Results (${Object.keys(data.fuzzingResults).length})</h2>
+                <h2>Fuzzing Results (${fuzzingResultCount})</h2>
                 <span>▼</span>
             </div>
             <div class="panel-content" id="fuzzing-content">
@@ -801,17 +830,19 @@ function renderFuzzingResults(fuzzingResults) {
                             <th>Lines</th>
                             <th>Words</th>
                             <th>Chars</th>
+                            <th>Redirect</th>
                         </tr>
                     </thead>
                     <tbody>
                         ${fuzzingResults[subdomain].map(result => `
                             <tr>
                                 <td><span class="badge ${result.status >= 200 && result.status < 300 ? 'alive' : 'dead'}">${result.status}</span></td>
-                                <td>${result.method || 'GET'}</td>
+                                <td>${result.method}</td>
                                 <td><a href="${result.url}" target="_blank">${result.url}</a></td>
-                                <td>${result.lines || 'N/A'}</td>
-                                <td>${result.words || 'N/A'}</td>
-                                <td>${result.chars || 'N/A'}</td>
+                                <td>${result.lines}</td>
+                                <td>${result.words}</td>
+                                <td>${result.chars}</td>
+                                <td>${result.redirect || ''}</td>
                             </tr>
                         `).join('')}
                     </tbody>

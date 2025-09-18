@@ -7,7 +7,14 @@ from core.utils import save_to_file, run_command
 
 def run_fuzzing(domain, output_dir,rate_limit=0,wordlist=None, headers=None, http_proto=443):
     outfile = output_dir / f'{domain}_fuzz.json'
-    cmd = f'feroxbuster -u {domain} -o {outfile} --rate-limit {rate_limit} --protocol {http_proto} -silent'
+    url =''
+    if http_proto == 80:
+        url= f'http://{domain}'
+    else:
+        url = f'https://{domain}'
+
+    cmd = f'feroxbuster -u {url} -o {outfile} --rate-limit {rate_limit} --protocol {http_proto}'
+    
     if headers is not None:
         cmd = f'{cmd} -H "{headers}"'
     if wordlist is not None:
