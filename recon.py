@@ -5,7 +5,7 @@ from core.colors import PURPLE
 if __name__ == '__main__':
     import argparse
     from core.banner import banner
-    from core.utils import load_out_of_scope, filter_out_of_scope, save_to_file
+    from core.utils import load_out_of_scope, filter_out_of_scope, save_to_file,run_command
     import modules.vuln_scan as vuln_scan
     import modules.subdomain_enum as enum
     import modules.alive_check as alive
@@ -24,6 +24,7 @@ if __name__ == '__main__':
         parser.add_argument('--user-agent', help='Custom User Agent')
         parser.add_argument('-o','--output', default='output', help='Results output file')
         parser.add_argument('-l','--list',action='store_true',help='List of tools used')
+        parser.add_argument('--dashboard',default=True,action='store_true',help='Enable dashboard for the results at http://localhost:8000/app')
         parser.add_argument(
         '--skip-tools',
         help='Comma-separated list of tools to skip (e.g., amass,httprobe,gowitness)',
@@ -151,6 +152,11 @@ if __name__ == '__main__':
             if 'nuclei' not in skip_tools:
                 vuln_scan.run_nuclei(alive_file,raw_output_dir)
         
+        # launch the web dashboard 
+        if args.dashboard:
+            print(f"{GREEN}[+] Launching the dashboard on port 8000, visit http://localhost:8000 to access it{RESET}")
+            run_command(['python3','-m','http.server','8000'])
+
         print(f"""
 ============================================================================================================================================================
 {GREEN}[+] Recon Completed {RESET}
