@@ -132,6 +132,7 @@ async function loadDomainData(domain) {
         // Reset filters
         state.searchTerm = '';
         globalSearchEl.value = '';
+        state.filters.alive = 'all';
         
         // Load all data files in parallel
         const [
@@ -165,10 +166,14 @@ async function loadDomainData(domain) {
         // Process the data
         const subdomains = processSubdomains(
             domain, amassData, assetfinderData, subfinderData, 
-            sublist3rData, crtshData, allSubsData, amassRawData
+            sublist3rData, crtshData, allSubsData
         );
         
         const aliveHosts = processAliveHosts(aliveSubsData, aliveUrlsData);
+        
+        // Process amass raw data
+        const amassRawRecords = amassRawData.status === 'fulfilled' ? 
+            processAmassRawData(amassRawData.value, domain) : [];
         
         // Store the data in state
         state.domainData[domain] = {
@@ -176,7 +181,8 @@ async function loadDomainData(domain) {
             aliveHosts,
             nucleiFindings: nucleiData.status === 'fulfilled' ? nucleiData.value : [],
             waybackUrls: waybackData.status === 'fulfilled' ? waybackData.value : {},
-            screenshots: screenshots.status === 'fulfilled' ? screenshots.value : []
+            screenshots: screenshots.status === 'fulfilled' ? screenshots.value : [],
+            amassRawRecords
         };
         
         renderDomainData(domain);
@@ -291,7 +297,7 @@ async function fetchScreenshots(domain) {
 }
 
 // Process subdomains from various sources
-function processSubdomains(domain, amassData, assetfinderData, subfinderData, sublist3rData, crtshData, allSubsData, amassRawData) {
+function processSubdomains(domain, amassData, assetfinderData, subfinderData, sublist3rData, crtshData, allSubsData) {
     const subdomains = new Map();
     
     // Process standard text files
@@ -299,7 +305,7 @@ function processSubdomains(domain, amassData, assetfinderData, subfinderData, su
         if (data.status !== 'fulfilled') return;
         
         data.value.forEach(hostname => {
-            if (!hostname) return;
+            if (!hostname || !isSubdomainOf(hostname, domain)) return;
             
             if (!subdomains.has(hostname)) {
                 subdomains.set(hostname, {
@@ -320,56 +326,6 @@ function processSubdomains(domain, amassData, assetfinderData, subfinderData, su
     processFile(crtshData, 'crt.sh');
     processFile(allSubsData, 'all_subs');
     
-    // Process amass raw data (special parsing)
-    if (amassRawData.status === 'fulfilled') {
-        amassRawData.value.forEach(line => {
-            if (!line) return;
-            
-            // Parse amass raw format
-            let hostnames = [];
-            
-            if (line.includes(']')) {
-                // Format: [INFO] Found subdomain example.com
-                const parts = line.split(']');
-                if (parts.length > 1) {
-                    const potentialHost = parts[1].trim().split(/\s+/)[0];
-                    if (potentialHost && potentialHost.includes('.') && potentialHost !== domain) {
-                        hostnames.push(potentialHost);
-                    }
-                }
-            } else {
-                // Format: example.com --> something
-                const tokens = line.split(/\s+/);
-                tokens.forEach(token => {
-                    if (token.includes('.') && 
-                        !token.startsWith('http') && 
-                        !token.includes('://') && 
-                        !token.includes('(') && 
-                        !token.includes(')') &&
-                        !token.includes('->') &&
-                        token !== domain) {
-                        hostnames.push(token);
-                    }
-                });
-            }
-            
-            // Add found hostnames
-            hostnames.forEach(hostname => {
-                if (!hostname) return;
-                
-                if (!subdomains.has(hostname)) {
-                    subdomains.set(hostname, {
-                        hostname,
-                        tools: new Set(),
-                        isAlive: false
-                    });
-                }
-                
-                subdomains.get(hostname).tools.add('amass_raw');
-            });
-        });
-    }
-    
     // Convert Map to Array and sort
     return Array.from(subdomains.values())
         .map(sub => ({
@@ -378,6 +334,41 @@ function processSubdomains(domain, amassData, assetfinderData, subfinderData, su
             toolCount: sub.tools.size
         }))
         .sort((a, b) => a.hostname.localeCompare(b.hostname));
+}
+
+// Process amass raw data into structured records
+function processAmassRawData(lines, domain) {
+    const records = [];
+    
+    lines.forEach(line => {
+        if (!line) return;
+        
+        // Parse the relationship format: source --> type --> target
+        const parts = line.split('-->').map(part => part.trim());
+        if (parts.length !== 3) return;
+        
+        const [source, type, target] = parts;
+        
+        // Extract clean values (remove metadata in parentheses)
+        const cleanSource = source.replace(/\s*\(.*?\)\s*$/, '');
+        const cleanTarget = target.replace(/\s*\(.*?\)\s*$/, '');
+        const cleanType = type.replace(/\s*\(.*?\)\s*$/, '');
+        
+        records.push({
+            source: cleanSource,
+            type: cleanType,
+            target: cleanTarget,
+            fullLine: line
+        });
+    });
+    
+    return records;
+}
+
+// Check if a hostname is a subdomain of the given domain
+function isSubdomainOf(hostname, domain) {
+    if (hostname === domain) return true;
+    return hostname.endsWith('.' + domain);
 }
 
 // Process alive hosts
@@ -419,10 +410,17 @@ function renderDomainData(domain) {
         isAlive: data.aliveHosts.includes(sub.hostname)
     }));
     
-    // Filter subdomains based on search term
-    const filteredSubdomains = state.searchTerm 
+    // Filter subdomains based on search term and status filter
+    let filteredSubdomains = state.searchTerm 
         ? subdomains.filter(sub => sub.hostname.toLowerCase().includes(state.searchTerm))
         : subdomains;
+    
+    // Apply status filter
+    if (state.filters.alive !== 'all') {
+        filteredSubdomains = filteredSubdomains.filter(sub => 
+            state.filters.alive === 'alive' ? sub.isAlive : !sub.isAlive
+        );
+    }
     
     // Filter nuclei findings based on search term
     const filteredNuclei = state.searchTerm
@@ -482,6 +480,10 @@ function renderDomainData(domain) {
                 <h3>Wayback URLs</h3>
                 <div class="value">${waybackUrlCount}</div>
             </div>
+            <div class="card">
+                <h3>Amass Records</h3>
+                <div class="value">${data.amassRawRecords.length}</div>
+            </div>
         </div>
         
         <div class="severity-cards">
@@ -510,10 +512,27 @@ function renderDomainData(domain) {
         <div class="panel">
             <div class="panel-header" id="subdomains-header">
                 <h2>Subdomains (${filteredSubdomains.length})</h2>
-                <span>▼</span>
+                <div>
+                    <select id="status-filter" class="filter-select">
+                        <option value="all">All Status</option>
+                        <option value="alive">Alive Only</option>
+                        <option value="dead">Dead Only</option>
+                    </select>
+                    <span>▼</span>
+                </div>
             </div>
             <div class="panel-content" id="subdomains-content">
                 ${renderSubdomainsTable(filteredSubdomains, data)}
+            </div>
+        </div>
+        
+        <div class="panel">
+            <div class="panel-header" id="amass-raw-header">
+                <h2>Amass Raw Data (${data.amassRawRecords.length})</h2>
+                <span>▼</span>
+            </div>
+            <div class="panel-content" id="amass-raw-content">
+                ${renderAmassRawTable(data.amassRawRecords)}
             </div>
         </div>
         
@@ -548,9 +567,16 @@ function renderDomainData(domain) {
         </div>
     `;
     
+    // Set the current filter value
+    document.getElementById('status-filter').value = state.filters.alive;
+    
     // Add event listeners for collapsible panels
     document.getElementById('subdomains-header').addEventListener('click', () => {
         togglePanel('subdomains-content');
+    });
+    
+    document.getElementById('amass-raw-header').addEventListener('click', () => {
+        togglePanel('amass-raw-content');
     });
     
     document.getElementById('nuclei-header').addEventListener('click', () => {
@@ -563,6 +589,12 @@ function renderDomainData(domain) {
     
     document.getElementById('screenshots-header').addEventListener('click', () => {
         togglePanel('screenshots-content');
+    });
+    
+    // Add event listener for status filter
+    document.getElementById('status-filter').addEventListener('change', (e) => {
+        state.filters.alive = e.target.value;
+        renderDomainData(domain);
     });
     
     // Add event listener for export button
@@ -625,6 +657,36 @@ function renderSubdomainsTable(subdomains, data) {
                                 <button class="button" onclick="window.open('http://${sub.hostname}', '_blank')">Open</button>
                                 <button class="button" data-hostname="${sub.hostname}" onclick="copyToClipboard('${sub.hostname}')">Copy</button>
                             </td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        </div>
+    `;
+}
+
+// Render amass raw data table
+function renderAmassRawTable(records) {
+    if (records.length === 0) {
+        return '<div class="empty-state">No amass raw data found</div>';
+    }
+    
+    return `
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Source</th>
+                        <th>Relationship</th>
+                        <th>Target</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${records.map((record, index) => `
+                        <tr>
+                            <td>${record.source}</td>
+                            <td><span class="badge info">${record.type}</span></td>
+                            <td>${record.target}</td>
                         </tr>
                     `).join('')}
                 </tbody>
@@ -819,7 +881,8 @@ function exportDomainData(domain, data) {
         aliveHosts: data.aliveHosts,
         nucleiFindings: data.nucleiFindings,
         waybackUrls: data.waybackUrls,
-        screenshots: data.screenshots
+        screenshots: data.screenshots,
+        amassRawRecords: data.amassRawRecords
     };
     
     const jsonString = JSON.stringify(exportData, null, 2);
