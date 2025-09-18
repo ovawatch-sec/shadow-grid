@@ -147,7 +147,8 @@ async function loadDomainData(domain) {
             amassRawData,
             nucleiData,
             waybackData,
-            screenshots
+            screenshots,
+            fuzzingData
         ] = await Promise.allSettled([
             fetchTextFile(`${base_directory}${domain}/amass.txt`),
             fetchTextFile(`${base_directory}${domain}/assetfinder.txt`),
@@ -160,7 +161,8 @@ async function loadDomainData(domain) {
             fetchTextFile(`${base_directory}${domain}/raw/amass_raw.txt`),
             fetchNucleiData(`${base_directory}${domain}/raw/nuclei_results.json`),
             fetchWaybackData(domain),
-            fetchScreenshots(domain)
+            fetchScreenshots(domain),
+            fetchFuzzingData(domain)
         ]);
         
         // Process the data
@@ -182,7 +184,8 @@ async function loadDomainData(domain) {
             nucleiFindings: nucleiData.status === 'fulfilled' ? nucleiData.value : [],
             waybackUrls: waybackData.status === 'fulfilled' ? waybackData.value : {},
             screenshots: screenshots.status === 'fulfilled' ? screenshots.value : [],
-            amassRawRecords
+            amassRawRecords,
+            fuzzingResults: fuzzingData.status === 'fulfilled' ? fuzzingData.value : {}
         };
         
         renderDomainData(domain);
@@ -292,6 +295,63 @@ async function fetchScreenshots(domain) {
             .map(href => href.replace(/.*\//, ''));
     } catch (error) {
         console.warn(`Failed to fetch screenshots for ${domain}:`, error);
+        return [];
+    }
+}
+
+// Fetch fuzzing data for a domain
+async function fetchFuzzingData(domain) {
+    try {
+        // Try to get list of fuzzing files
+        const response = await fetch(`${base_directory}${domain}/raw/`);
+        if (!response.ok) return {};
+        
+        const html = await response.text();
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, 'text/html');
+        
+        const links = Array.from(doc.querySelectorAll('a'));
+        const fuzzFiles = links
+            .map(link => link.href)
+            .filter(href => href.endsWith('_fuzz.json') && !href.includes('../'))
+            .map(href => href.replace(/.*\//, ''));
+        
+        // Fetch all fuzzing files
+        const fuzzingData = {};
+        for (const file of fuzzFiles) {
+            const subdomain = file.replace('_fuzz.json', '');
+            const data = await fetchFuzzingFile(`${base_directory}${domain}/raw/${file}`);
+            fuzzingData[subdomain] = data;
+        }
+        
+        return fuzzingData;
+    } catch (error) {
+        console.warn(`Failed to fetch fuzzing data for ${domain}:`, error);
+        return {};
+    }
+}
+
+// Fetch and parse a fuzzing file
+async function fetchFuzzingFile(url) {
+    try {
+        const response = await fetch(url);
+        if (!response.ok) return [];
+        const text = await response.text();
+        
+        // Parse NDJSON format
+        return text.split('\n')
+            .filter(line => line.trim().length > 0)
+            .map(line => {
+                try {
+                    return JSON.parse(line);
+                } catch (parseError) {
+                    console.warn('Failed to parse fuzzing line:', line, parseError);
+                    return null;
+                }
+            })
+            .filter(item => item !== null && item.kind !== 'configuration');
+    } catch (error) {
+        console.warn(`Failed to fetch fuzzing file ${url}:`, error);
         return [];
     }
 }
@@ -484,6 +544,10 @@ function renderDomainData(domain) {
                 <h3>Amass Records</h3>
                 <div class="value">${data.amassRawRecords.length}</div>
             </div>
+            <div class="card">
+                <h3>Fuzzing Results</h3>
+                <div class="value">${Object.keys(data.fuzzingResults).length}</div>
+            </div>
         </div>
         
         <div class="severity-cards">
@@ -537,6 +601,16 @@ function renderDomainData(domain) {
         </div>
         
         <div class="panel">
+            <div class="panel-header" id="fuzzing-header">
+                <h2>Fuzzing Results (${Object.keys(data.fuzzingResults).length})</h2>
+                <span>▼</span>
+            </div>
+            <div class="panel-content" id="fuzzing-content">
+                ${renderFuzzingResults(data.fuzzingResults)}
+            </div>
+        </div>
+        
+        <div class="panel">
             <div class="panel-header" id="nuclei-header">
                 <h2>Nuclei Findings (${filteredNuclei.length})</h2>
                 <span>▼</span>
@@ -577,6 +651,10 @@ function renderDomainData(domain) {
     
     document.getElementById('amass-raw-header').addEventListener('click', () => {
         togglePanel('amass-raw-content');
+    });
+    
+    document.getElementById('fuzzing-header').addEventListener('click', () => {
+        togglePanel('fuzzing-content');
     });
     
     document.getElementById('nuclei-header').addEventListener('click', () => {
@@ -665,34 +743,82 @@ function renderSubdomainsTable(subdomains, data) {
     `;
 }
 
-// Render amass raw data table
+// Render amass raw data table (grouped by type)
 function renderAmassRawTable(records) {
     if (records.length === 0) {
         return '<div class="empty-state">No amass raw data found</div>';
     }
     
-    return `
+    // Group records by type
+    const groupedRecords = {};
+    records.forEach(record => {
+        if (!groupedRecords[record.type]) {
+            groupedRecords[record.type] = [];
+        }
+        groupedRecords[record.type].push(record);
+    });
+    
+    return Object.entries(groupedRecords).map(([type, typeRecords]) => `
+        <h3>${type} Records (${typeRecords.length})</h3>
         <div class="table-container">
             <table>
                 <thead>
                     <tr>
                         <th>Source</th>
-                        <th>Relationship</th>
                         <th>Target</th>
                     </tr>
                 </thead>
                 <tbody>
-                    ${records.map((record, index) => `
+                    ${typeRecords.map(record => `
                         <tr>
                             <td>${record.source}</td>
-                            <td><span class="badge info">${record.type}</span></td>
                             <td>${record.target}</td>
                         </tr>
                     `).join('')}
                 </tbody>
             </table>
         </div>
-    `;
+    `).join('');
+}
+
+// Render fuzzing results
+function renderFuzzingResults(fuzzingResults) {
+    const subdomains = Object.keys(fuzzingResults);
+    if (subdomains.length === 0) {
+        return '<div class="empty-state">No fuzzing results found</div>';
+    }
+    
+    return subdomains.map(subdomain => `
+        <div class="fuzzing-group">
+            <h3>${subdomain}</h3>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Status</th>
+                            <th>Method</th>
+                            <th>URL</th>
+                            <th>Lines</th>
+                            <th>Words</th>
+                            <th>Chars</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${fuzzingResults[subdomain].map(result => `
+                            <tr>
+                                <td><span class="badge ${result.status >= 200 && result.status < 300 ? 'alive' : 'dead'}">${result.status}</span></td>
+                                <td>${result.method || 'GET'}</td>
+                                <td><a href="${result.url}" target="_blank">${result.url}</a></td>
+                                <td>${result.lines || 'N/A'}</td>
+                                <td>${result.words || 'N/A'}</td>
+                                <td>${result.chars || 'N/A'}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    `).join('');
 }
 
 // Get screenshot thumbnail for a hostname
@@ -882,7 +1008,8 @@ function exportDomainData(domain, data) {
         nucleiFindings: data.nucleiFindings,
         waybackUrls: data.waybackUrls,
         screenshots: data.screenshots,
-        amassRawRecords: data.amassRawRecords
+        amassRawRecords: data.amassRawRecords,
+        fuzzingResults: data.fuzzingResults
     };
     
     const jsonString = JSON.stringify(exportData, null, 2);

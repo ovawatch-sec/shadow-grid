@@ -190,6 +190,9 @@ header h1 {
 
 .table-container {
     overflow-x: auto;
+    max-height: 400px;
+    overflow-y: auto;
+    margin-bottom: 1rem;
 }
 
 table {
@@ -206,6 +209,8 @@ th, td {
 th {
     font-weight: 600;
     background-color: var(--bg-tertiary);
+    position: sticky;
+    top: 0;
 }
 
 tr:hover {
@@ -296,6 +301,18 @@ tr:hover {
 
 .wayback-url:last-child {
     border-bottom: none;
+}
+
+.fuzzing-group {
+    margin-bottom: 1.5rem;
+}
+
+.fuzzing-group h3 {
+    font-size: 1rem;
+    margin-bottom: 0.5rem;
+    color: var(--accent);
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--border);
 }
 
 .screenshots-grid {
@@ -468,5 +485,9 @@ tr:hover {
     
     .panel-header > div {
         margin-top: 0.5rem;
+    }
+    
+    .table-container {
+        max-height: 300px;
     }
 }

@@ -3,7 +3,7 @@ from pathlib import Path
 from core.colors import RED,RESET,GREEN
 from core.utils import run_command
 
-def run_gowitness(alive_subs, output_dir):
+def run_gowitness(alive_subs, output_dir,http_proto=443):
     """
     Run gowitness against a file of alive domains.
     Expects alive_domains (list of URLs) or a path to a file.
@@ -18,10 +18,11 @@ def run_gowitness(alive_subs, output_dir):
     cmd = [
         "gowitness", "scan", "file",
         "-f", str(alive_subs),
-        "--no-http",
         "--timeout", "300",
         "-s", str(screenshots_dir)
     ]
+    if http_proto == 443:
+        cmd.append("--no-http")
 
     proc = run_command(cmd)
 

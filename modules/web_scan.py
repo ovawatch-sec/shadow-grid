@@ -5,11 +5,11 @@ import shutil
 from core.colors import RED,GREEN,RESET
 from core.utils import save_to_file, run_command
 
-def run_fuzzing(domain, output_dir,rate_limit=0,wordlist=None, headers=None):
+def run_fuzzing(domain, output_dir,rate_limit=0,wordlist=None, headers=None, http_proto=443):
     outfile = output_dir / f'{domain}_fuzz.json'
-    cmd = f'feroxbuster -u {domain} -o {outfile} --rate-limit {rate_limit}'
+    cmd = f'feroxbuster -u {domain} -o {outfile} --rate-limit {rate_limit} --protocol {http_proto} -silent'
     if headers is not None:
-        cmd = f'{cmd} -H {headers}'
+        cmd = f'{cmd} -H "{headers}"'
     if wordlist is not None:
         cmd = f'{cmd} -w {wordlist}'
     try:
