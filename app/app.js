@@ -1,16 +1,17 @@
 // Global state
 const state = {
-  domains: [],
-  currentDomain: null,
-  domainData: {},
-  searchTerm: '',
-  filters: {
-    alive: 'all',
-    tool: 'all'
-  }
+    domains: [],
+    currentDomain: null,
+    domainData: {},
+    searchTerm: '',
+    filters: {
+        alive: 'all',
+        tool: 'all'
+    }
 };
 
-const base_directory = '/output/'
+// Use relative path to output directory
+const base_directory = '../output/';
 
 // DOM Elements
 const domainsListEl = document.getElementById('domains-list');
@@ -21,437 +22,440 @@ const screenshotModalEl = document.getElementById('screenshot-modal');
 
 // Initialize the application
 async function init() {
-  try {
-    await loadDomains();
-    setupEventListeners();
-  } catch (error) {
-    console.warn('Failed to initialize app:', error);
-    domainsListEl.innerHTML = '<div class="empty-state">Failed to load domains. Make sure you\'re serving from the parent directory of output/</div>';
-  }
+    try {
+        await loadDomains();
+        setupEventListeners();
+    } catch (error) {
+        console.warn('Failed to initialize app:', error);
+        domainsListEl.innerHTML = '<div class="empty-state">Failed to load domains. Make sure you\'re serving from the parent directory of output/</div>';
+    }
 }
 
 // Set up event listeners
 function setupEventListeners() {
-  globalSearchEl.addEventListener('input', (e) => {
-    state.searchTerm = e.target.value.toLowerCase();
-    if (state.currentDomain) {
-      renderDomainData(state.currentDomain);
-    }
-  });
-
-  // Close modals when clicking the close button
-  document.querySelectorAll('.close').forEach(closeBtn => {
-    closeBtn.addEventListener('click', () => {
-      nucleiModalEl.style.display = 'none';
-      screenshotModalEl.style.display = 'none';
+    globalSearchEl.addEventListener('input', (e) => {
+        state.searchTerm = e.target.value.toLowerCase();
+        if (state.currentDomain) {
+            renderDomainData(state.currentDomain);
+        }
     });
-  });
-
-  // Close modals when clicking outside
-  window.addEventListener('click', (e) => {
-    if (e.target === nucleiModalEl) {
-      nucleiModalEl.style.display = 'none';
-    }
-    if (e.target === screenshotModalEl) {
-      screenshotModalEl.style.display = 'none';
-    }
-  });
+    
+    // Close modals when clicking the close button
+    document.querySelectorAll('.close').forEach(closeBtn => {
+        closeBtn.addEventListener('click', () => {
+            nucleiModalEl.style.display = 'none';
+            screenshotModalEl.style.display = 'none';
+        });
+    });
+    
+    // Close modals when clicking outside
+    window.addEventListener('click', (e) => {
+        if (e.target === nucleiModalEl) {
+            nucleiModalEl.style.display = 'none';
+        }
+        if (e.target === screenshotModalEl) {
+            screenshotModalEl.style.display = 'none';
+        }
+    });
 }
 
 // Load domains from the output directory
 async function loadDomains() {
-  try {
-    // Try to fetch the directory listing
-    const dirs = await listDirectory(base_directory);
-
-    const domains = dirs
-      .filter(d => d.endsWith("/"))
-      .map(d => d.replace(/\/$/, ""));
-
-    state.domains = domains;
-    renderDomainsList();
-  } catch (error) {
-    console.log('Error loading domains:', error);
-  }
+    try {
+        // Try to fetch the directory listing
+        const dirs = await listDirectory(base_directory);
+        
+        const domains = dirs
+            .filter(d => d.endsWith("/"))
+            .map(d => d.replace(/\/$/, ""))
+            .filter(domain => domain && domain !== "../");
+        
+        state.domains = domains;
+        renderDomainsList();
+    } catch (error) {
+        console.log('Error loading domains:', error);
+        // Fallback: try to load from a hardcoded list if directory listing fails
+        state.domains = ['ovawatch.co.za', 'powerfleet.com'];
+        renderDomainsList();
+    }
 }
+
 // Parse http.server directory listing HTML
 async function listDirectory(path) {
-  try {
-    const res = await fetch(path);
-    if (!res.ok) throw new Error("not ok");
-    const html = await res.text();
-    const div = document.createElement("div");
-    div.innerHTML = html;
-    const links = [...div.querySelectorAll("a")].map(a => a.getAttribute("href"));
-    // Filter out parent link, query params, etc.
-    return links.filter(href =>
-      href &&
-      href !== "../" &&
-      !href.startsWith("?") &&
-      !href.startsWith("#")
-    );
-  } catch {
-    return [];
-  }
+    try {
+        const res = await fetch(path);
+        if (!res.ok) return [];
+        const html = await res.text();
+        const div = document.createElement("div");
+        div.innerHTML = html;
+        const links = [...div.querySelectorAll("a")].map(a => a.getAttribute("href"));
+        // Filter out parent link, query params, etc.
+        return links.filter(href =>
+            href &&
+            href !== "../" &&
+            !href.startsWith("?") &&
+            !href.startsWith("#")
+        );
+    } catch {
+        return [];
+    }
 }
 
 // Render the domains list
 function renderDomainsList() {
-  if (state.domains.length === 0) {
-    domainsListEl.innerHTML = '<div class="empty-state">No domains found</div>';
-    return;
-  }
-
-  domainsListEl.innerHTML = state.domains.map(domain => `
+    if (state.domains.length === 0) {
+        domainsListEl.innerHTML = '<div class="empty-state">No domains found</div>';
+        return;
+    }
+    
+    domainsListEl.innerHTML = state.domains.map(domain => `
         <div class="domain-item" data-domain="${domain}">${domain}</div>
     `).join('');
-
-  // Add click event listeners to domain items
-  document.querySelectorAll('.domain-item').forEach(item => {
-    item.addEventListener('click', async () => {
-      const domain = item.getAttribute('data-domain');
-      document.querySelectorAll('.domain-item').forEach(i => i.classList.remove('active'));
-      item.classList.add('active');
-      await loadDomainData(domain);
+    
+    // Add click event listeners to domain items
+    document.querySelectorAll('.domain-item').forEach(item => {
+        item.addEventListener('click', async () => {
+            const domain = item.getAttribute('data-domain');
+            document.querySelectorAll('.domain-item').forEach(i => i.classList.remove('active'));
+            item.classList.add('active');
+            await loadDomainData(domain);
+        });
     });
-  });
 }
 
 // Load data for a specific domain
 async function loadDomainData(domain) {
-  state.currentDomain = domain;
-  domainDataEl.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
-
-  try {
-    // Reset filters
-    state.searchTerm = '';
-    globalSearchEl.value = '';
-
-    // Load all data files in parallel
-    const [
-      amassData,
-      assetfinderData,
-      subfinderData,
-      sublist3rData,
-      crtshData,
-      allSubsData,
-      aliveSubsData,
-      aliveUrlsData,
-      amassRawData,
-      nucleiData,
-      waybackData,
-      screenshots
-    ] = await Promise.allSettled([
-      fetchTextFile(`${base_directory}${domain}/amass.txt`),
-      fetchTextFile(`${base_directory}${domain}/assetfinder.txt`),
-      fetchTextFile(`${base_directory}${domain}/subfinder.txt`),
-      fetchTextFile(`${base_directory}${domain}/sublist3r.txt`),
-      fetchTextFile(`${base_directory}${domain}/crt.sh.txt`),
-      fetchTextFile(`${base_directory}${domain}/all_subs.txt`),
-      fetchTextFile(`${base_directory}${domain}/alive_subs.txt`),
-      fetchTextFile(`${base_directory}${domain}/alive_urls.txt`),
-      fetchTextFile(`${base_directory}${domain}/raw/amass_raw.txt`),
-      fetchNucleiData(`${base_directory}${domain}/raw/nuclei_results.json`),
-      fetchWaybackData(domain),
-      fetchScreenshots(domain)
-    ]);
-
-    // Process the data
-    const subdomains = processSubdomains(
-      amassData, assetfinderData, subfinderData,
-      sublist3rData, crtshData, allSubsData, amassRawData
-    );
-
-    const aliveHosts = processAliveHosts(aliveSubsData, aliveUrlsData);
-
-    // Store the data in state
-    state.domainData[domain] = {
-      subdomains,
-      aliveHosts,
-      nucleiFindings: nucleiData.status === 'fulfilled' ? nucleiData.value : [],
-      waybackUrls: waybackData.status === 'fulfilled' ? waybackData.value : {},
-      screenshots: screenshots.status === 'fulfilled' ? screenshots.value : []
-    };
-    renderDomainData(domain);
-  } catch (error) {
-    console.warn(`Error loading data for ${domain}:`, error);
-    domainDataEl.innerHTML = `
+    state.currentDomain = domain;
+    domainDataEl.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+    
+    try {
+        // Reset filters
+        state.searchTerm = '';
+        globalSearchEl.value = '';
+        
+        // Load all data files in parallel
+        const [
+            amassData,
+            assetfinderData,
+            subfinderData,
+            sublist3rData,
+            crtshData,
+            allSubsData,
+            aliveSubsData,
+            aliveUrlsData,
+            amassRawData,
+            nucleiData,
+            waybackData,
+            screenshots
+        ] = await Promise.allSettled([
+            fetchTextFile(`${base_directory}${domain}/amass.txt`),
+            fetchTextFile(`${base_directory}${domain}/assetfinder.txt`),
+            fetchTextFile(`${base_directory}${domain}/subfinder.txt`),
+            fetchTextFile(`${base_directory}${domain}/sublist3r.txt`),
+            fetchTextFile(`${base_directory}${domain}/crt.sh.txt`),
+            fetchTextFile(`${base_directory}${domain}/all_subs.txt`),
+            fetchTextFile(`${base_directory}${domain}/alive_subs.txt`),
+            fetchTextFile(`${base_directory}${domain}/alive_urls.txt`),
+            fetchTextFile(`${base_directory}${domain}/raw/amass_raw.txt`),
+            fetchNucleiData(`${base_directory}${domain}/raw/nuclei_results.json`),
+            fetchWaybackData(domain),
+            fetchScreenshots(domain)
+        ]);
+        
+        // Process the data
+        const subdomains = processSubdomains(
+            domain, amassData, assetfinderData, subfinderData, 
+            sublist3rData, crtshData, allSubsData, amassRawData
+        );
+        
+        const aliveHosts = processAliveHosts(aliveSubsData, aliveUrlsData);
+        
+        // Store the data in state
+        state.domainData[domain] = {
+            subdomains,
+            aliveHosts,
+            nucleiFindings: nucleiData.status === 'fulfilled' ? nucleiData.value : [],
+            waybackUrls: waybackData.status === 'fulfilled' ? waybackData.value : {},
+            screenshots: screenshots.status === 'fulfilled' ? screenshots.value : []
+        };
+        
+        renderDomainData(domain);
+    } catch (error) {
+        console.warn(`Error loading data for ${domain}:`, error);
+        domainDataEl.innerHTML = `
             <div class="empty-state">
                 Failed to load data for ${domain}.<br>
                 Check the console for details.
             </div>
         `;
-  }
+    }
 }
 
 // Fetch a text file and return lines as array
 async function fetchTextFile(url) {
-  try {
-    const response = await fetch(url);
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const text = await response.text();
- 
-    return text.split('\n')
-      .map(line => line.trim())
-      .filter(line => line && line.length > 0);
-  } catch (error) {
-    console.warn(`Failed to fetch ${url}:`, error);
-    return [];
-  }
+    try {
+        const response = await fetch(url);
+        if (!response.ok) return [];
+        const text = await response.text();
+        return text.split('\n')
+            .map(line => line.trim())
+            .filter(line => line.length > 0);
+    } catch (error) {
+        console.warn(`Failed to fetch ${url}:`, error);
+        return [];
+    }
 }
 
 // Fetch and parse nuclei data (supports both JSON array and NDJSON)
 async function fetchNucleiData(url) {
-  try {
-    const response = await fetch(url);
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const text = await response.text();
-
-    // Try to parse as JSON array first
     try {
-      return JSON.parse(text);
-    } catch (e) {
-      // If that fails, try to parse as NDJSON (newline-delimited JSON)
-      return text.split('\n')
-        .filter(line => line.trim().length > 0)
-        .map(line => {
-          try {
-            return JSON.parse(line);
-          } catch (parseError) {
-            console.warn('Failed to parse nuclei line:', line, parseError);
-            return null;
-          }
-        })
-        .filter(item => item !== null);
+        const response = await fetch(url);
+        if (!response.ok) return [];
+        const text = await response.text();
+        
+        // Try to parse as JSON array first
+        try {
+            return JSON.parse(text);
+        } catch (e) {
+            // If that fails, try to parse as NDJSON (newline-delimited JSON)
+            return text.split('\n')
+                .filter(line => line.trim().length > 0)
+                .map(line => {
+                    try {
+                        return JSON.parse(line);
+                    } catch (parseError) {
+                        console.warn('Failed to parse nuclei line:', line, parseError);
+                        return null;
+                    }
+                })
+                .filter(item => item !== null);
+        }
+    } catch (error) {
+        console.warn(`Failed to fetch nuclei data from ${url}:`, error);
+        return [];
     }
-  } catch (error) {
-    console.warn(`Failed to fetch nuclei data from ${url}:`, error);
-    return [];
-  }
 }
 
 // Fetch wayback data for a domain
 async function fetchWaybackData(domain) {
-  try {
-    // Try to get list of wayback files
-    const response = await fetch(`${base_directory}${domain}/waybackurls/`);
-    if (!response.ok) throw new Error('Wayback directory not found');
-
-    const html = await response.text();
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(html, 'text/html');
-
-    const links = Array.from(doc.querySelectorAll('a'));
-    const waybackFiles = links
-      .map(link => link.href)
-      .filter(href => href.endsWith('.txt') && !href.includes('../'))
-      .map(href => href.replace(/.*\//, ''));
-
-    // Fetch all wayback files
-    const waybackData = {};
-    for (const file of waybackFiles) {
-      const subdomain = file.replace('_wayback_urls.txt', '');
-      const urls = await fetchTextFile(`${base_directory}${domain}/waybackurls/${file}`);
-      waybackData[subdomain] = urls;
+    try {
+        // Try to get list of wayback files
+        const response = await fetch(`${base_directory}${domain}/waybackurls/`);
+        if (!response.ok) return {};
+        
+        const html = await response.text();
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, 'text/html');
+        
+        const links = Array.from(doc.querySelectorAll('a'));
+        const waybackFiles = links
+            .map(link => link.href)
+            .filter(href => href.endsWith('.txt') && !href.includes('../'))
+            .map(href => href.replace(/.*\//, ''));
+        
+        // Fetch all wayback files
+        const waybackData = {};
+        for (const file of waybackFiles) {
+            const subdomain = file.replace('_wayback_urls.txt', '');
+            const urls = await fetchTextFile(`${base_directory}${domain}/waybackurls/${file}`);
+            waybackData[subdomain] = urls;
+        }
+        
+        return waybackData;
+    } catch (error) {
+        console.warn(`Failed to fetch wayback data for ${domain}:`, error);
+        return {};
     }
-
-    return waybackData;
-  } catch (error) {
-    console.warn(`Failed to fetch wayback data for ${domain}:`, error);
-    return {};
-  }
 }
 
 // Fetch screenshots for a domain
 async function fetchScreenshots(domain) {
-  try {
-    // Try to get list of screenshot files
-    const response = await fetch(`${base_directory}${domain}/screenshots/`);
-    if (!response.ok) throw new Error('Screenshots directory not found');
-
-    const html = await response.text();
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(html, 'text/html');
-
-    const links = Array.from(doc.querySelectorAll('a'));
-    return links
-      .map(link => link.href)
-      .filter(href => /\.(jpe?g|png|gif|webp)$/i.test(href) && !href.includes('../'))
-      .map(href => href.replace(/.*\//, ''));
-  } catch (error) {
-    console.warn(`Failed to fetch screenshots for ${domain}:`, error);
-    return [];
-  }
+    try {
+        // Try to get list of screenshot files
+        const response = await fetch(`${base_directory}${domain}/screenshots/`);
+        if (!response.ok) return [];
+        
+        const html = await response.text();
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, 'text/html');
+        
+        const links = Array.from(doc.querySelectorAll('a'));
+        return links
+            .map(link => link.href)
+            .filter(href => /\.(jpe?g|png|gif|webp)$/i.test(href) && !href.includes('../'))
+            .map(href => href.replace(/.*\//, ''));
+    } catch (error) {
+        console.warn(`Failed to fetch screenshots for ${domain}:`, error);
+        return [];
+    }
 }
 
 // Process subdomains from various sources
-function processSubdomains(amassData, assetfinderData, subfinderData, sublist3rData, crtshData, allSubsData, amassRawData) {
-  const subdomains = new Map();
-
-  // Process standard text files
-  const processFile = (data, tool) => {
-    if (data.status !== 'fulfilled') return;
-
-    data.value.forEach(hostname => {
-      if (!hostname) return;
-
-      if (!subdomains.has(hostname)) {
-        subdomains.set(hostname, {
-          hostname,
-          tools: new Set(),
-          isAlive: false
-        });
-      }
-
-      subdomains.get(hostname).tools.add(tool);
-    });
-  };
-
-  processFile(amassData, 'amass');
-  processFile(assetfinderData, 'assetfinder');
-  processFile(subfinderData, 'subfinder');
-  processFile(sublist3rData, 'sublist3r');
-  processFile(crtshData, 'crt.sh');
-  processFile(allSubsData, 'all_subs');
-
-  // Process amass raw data (special parsing)
-  if (amassRawData.status === 'fulfilled') {
-    amassRawData.value.forEach(line => {
-      if (!line) return;
-
-      // Parse amass raw format
-      let hostnames = [];
-
-      if (line.includes(']')) {
-        // Format: [INFO] Found subdomain example.com
-        const parts = line.split(']');
-        if (parts.length > 1) {
-          const potentialHost = parts[1].trim().split(/\s+/)[0];
-          if (potentialHost && potentialHost.includes('.')) {
-            hostnames.push(potentialHost);
-          }
-        }
-      } 
-      else {
-        // Format: example.com --> something
-        const tokens = line.split(/\s+/);
-        tokens.forEach(token => {
-          if (token.includes('.') &&
-            !token.startsWith('http') &&
-            !token.includes('://') &&
-            !token.includes('(') &&
-            !token.includes(')') &&
-            !token.includes('->') &&
-            token !== domain) {
-            hostnames.push(token);
-          }
-        });
-      }
-
-      // Add found hostnames
-      hostnames.forEach(hostname => {
-        if (!hostname) return;
-
-        if (!subdomains.has(hostname)) {
-          subdomains.set(hostname, {
-            hostname,
-            tools: new Set(),
-            isAlive: false
-          });
-        }
-
-        subdomains.get(hostname).tools.add('amass_raw');
-      });
-    });
+function processSubdomains(domain, amassData, assetfinderData, subfinderData, sublist3rData, crtshData, allSubsData, amassRawData) {
+    const subdomains = new Map();
     
-  }
-
-  // Convert Map to Array and sort
-  return Array.from(subdomains.values())
-    .map(sub => ({
-      ...sub,
-      tools: Array.from(sub.tools),
-      toolCount: sub.tools.size
-    }))
-    .sort((a, b) => a.hostname.localeCompare(b.hostname));
+    // Process standard text files
+    const processFile = (data, tool) => {
+        if (data.status !== 'fulfilled') return;
+        
+        data.value.forEach(hostname => {
+            if (!hostname) return;
+            
+            if (!subdomains.has(hostname)) {
+                subdomains.set(hostname, {
+                    hostname,
+                    tools: new Set(),
+                    isAlive: false
+                });
+            }
+            
+            subdomains.get(hostname).tools.add(tool);
+        });
+    };
+    
+    processFile(amassData, 'amass');
+    processFile(assetfinderData, 'assetfinder');
+    processFile(subfinderData, 'subfinder');
+    processFile(sublist3rData, 'sublist3r');
+    processFile(crtshData, 'crt.sh');
+    processFile(allSubsData, 'all_subs');
+    
+    // Process amass raw data (special parsing)
+    if (amassRawData.status === 'fulfilled') {
+        amassRawData.value.forEach(line => {
+            if (!line) return;
+            
+            // Parse amass raw format
+            let hostnames = [];
+            
+            if (line.includes(']')) {
+                // Format: [INFO] Found subdomain example.com
+                const parts = line.split(']');
+                if (parts.length > 1) {
+                    const potentialHost = parts[1].trim().split(/\s+/)[0];
+                    if (potentialHost && potentialHost.includes('.') && potentialHost !== domain) {
+                        hostnames.push(potentialHost);
+                    }
+                }
+            } else {
+                // Format: example.com --> something
+                const tokens = line.split(/\s+/);
+                tokens.forEach(token => {
+                    if (token.includes('.') && 
+                        !token.startsWith('http') && 
+                        !token.includes('://') && 
+                        !token.includes('(') && 
+                        !token.includes(')') &&
+                        !token.includes('->') &&
+                        token !== domain) {
+                        hostnames.push(token);
+                    }
+                });
+            }
+            
+            // Add found hostnames
+            hostnames.forEach(hostname => {
+                if (!hostname) return;
+                
+                if (!subdomains.has(hostname)) {
+                    subdomains.set(hostname, {
+                        hostname,
+                        tools: new Set(),
+                        isAlive: false
+                    });
+                }
+                
+                subdomains.get(hostname).tools.add('amass_raw');
+            });
+        });
+    }
+    
+    // Convert Map to Array and sort
+    return Array.from(subdomains.values())
+        .map(sub => ({
+            ...sub,
+            tools: Array.from(sub.tools),
+            toolCount: sub.tools.size
+        }))
+        .sort((a, b) => a.hostname.localeCompare(b.hostname));
 }
 
 // Process alive hosts
 function processAliveHosts(aliveSubsData, aliveUrlsData) {
-  const aliveHosts = new Set();
-
-  // Process alive_subs.txt
-  if (aliveSubsData.status === 'fulfilled') {
-    aliveSubsData.value.forEach(hostname => {
-      if (hostname) aliveHosts.add(hostname);
-    });
-  }
-
-  // Process alive_urls.txt - extract hostnames from URLs
-  if (aliveUrlsData.status === 'fulfilled') {
-    aliveUrlsData.value.forEach(url => {
-      try {
-        const hostname = new URL(url.startsWith('http') ? url : `http://${url}`).hostname;
-        if (hostname) aliveHosts.add(hostname);
-      } catch (e) {
-        // If URL parsing fails, try to extract what looks like a hostname
-        const match = url.match(/[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
-        if (match) aliveHosts.add(match[0]);
-      }
-    });
-  }
-
-  return Array.from(aliveHosts);
+    const aliveHosts = new Set();
+    
+    // Process alive_subs.txt
+    if (aliveSubsData.status === 'fulfilled') {
+        aliveSubsData.value.forEach(hostname => {
+            if (hostname) aliveHosts.add(hostname);
+        });
+    }
+    
+    // Process alive_urls.txt - extract hostnames from URLs
+    if (aliveUrlsData.status === 'fulfilled') {
+        aliveUrlsData.value.forEach(url => {
+            try {
+                const hostname = new URL(url.startsWith('http') ? url : `http://${url}`).hostname;
+                if (hostname) aliveHosts.add(hostname);
+            } catch (e) {
+                // If URL parsing fails, try to extract what looks like a hostname
+                const match = url.match(/[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
+                if (match) aliveHosts.add(match[0]);
+            }
+        });
+    }
+    
+    return Array.from(aliveHosts);
 }
 
 // Render domain data
 function renderDomainData(domain) {
-  const data = state.domainData[domain];
-  if (!data) return;
-
-  // Mark alive subdomains
-  const subdomains = data.subdomains.map(sub => ({
-    ...sub,
-    isAlive: data.aliveHosts.includes(sub.hostname)
-  }));
-console.log(subdomains)
-  // Filter subdomains based on search term
-  const filteredSubdomains = state.searchTerm
-    ? subdomains.filter(sub => sub.hostname.toLowerCase().includes(state.searchTerm))
-    : subdomains;
-
-  // Filter nuclei findings based on search term
-  const filteredNuclei = state.searchTerm
-    ? data.nucleiFindings.filter(finding =>
-      (finding.template - id || '').toLowerCase().includes(state.searchTerm) ||
-      (finding.info?.name || '').toLowerCase().includes(state.searchTerm) ||
-      (finding.host || '').toLowerCase().includes(state.searchTerm) ||
-      (finding.matched - at || '').toLowerCase().includes(state.searchTerm))
-    : data.nucleiFindings;
-
-  // Count findings by severity
-  const severityCounts = {
-    critical: 0,
-    high: 0,
-    medium: 0,
-    low: 0,
-    info: 0,
-    unknown: 0
-  };
-
-  data.nucleiFindings.forEach(finding => {
-    const severity = finding.severity || finding.info?.severity || 'unknown';
-    severityCounts[severity] = (severityCounts[severity] || 0) + 1;
-  });
-
-  // Count wayback URLs
-  let waybackUrlCount = 0;
-  for (const sub in data.waybackUrls) {
-    waybackUrlCount += data.waybackUrls[sub].length;
-  }
-
-  // Render the domain data
-  domainDataEl.innerHTML = `
+    const data = state.domainData[domain];
+    if (!data) return;
+    
+    // Mark alive subdomains
+    const subdomains = data.subdomains.map(sub => ({
+        ...sub,
+        isAlive: data.aliveHosts.includes(sub.hostname)
+    }));
+    
+    // Filter subdomains based on search term
+    const filteredSubdomains = state.searchTerm 
+        ? subdomains.filter(sub => sub.hostname.toLowerCase().includes(state.searchTerm))
+        : subdomains;
+    
+    // Filter nuclei findings based on search term
+    const filteredNuclei = state.searchTerm
+        ? data.nucleiFindings.filter(finding => 
+            (finding['template-id'] || '').toLowerCase().includes(state.searchTerm) ||
+            (finding.info?.name || '').toLowerCase().includes(state.searchTerm) ||
+            (finding.host || '').toLowerCase().includes(state.searchTerm) ||
+            (finding['matched-at'] || '').toLowerCase().includes(state.searchTerm))
+        : data.nucleiFindings;
+    
+    // Count findings by severity
+    const severityCounts = {
+        critical: 0,
+        high: 0,
+        medium: 0,
+        low: 0,
+        info: 0,
+        unknown: 0
+    };
+    
+    data.nucleiFindings.forEach(finding => {
+        const severity = finding.severity || finding.info?.severity || 'unknown';
+        severityCounts[severity] = (severityCounts[severity] || 0) + 1;
+    });
+    
+    // Count wayback URLs
+    let waybackUrlCount = 0;
+    for (const sub in data.waybackUrls) {
+        waybackUrlCount += data.waybackUrls[sub].length;
+    }
+    
+    // Render the domain data
+    domainDataEl.innerHTML = `
         <div class="domain-header">
             <h2>${domain}</h2>
             <button class="button" id="export-btn">Export Data</button>
@@ -543,60 +547,60 @@ console.log(subdomains)
             </div>
         </div>
     `;
-
-  // Add event listeners for collapsible panels
-  document.getElementById('subdomains-header').addEventListener('click', () => {
-    togglePanel('subdomains-content');
-  });
-
-  document.getElementById('nuclei-header').addEventListener('click', () => {
-    togglePanel('nuclei-content');
-  });
-
-  document.getElementById('wayback-header').addEventListener('click', () => {
-    togglePanel('wayback-content');
-  });
-
-  document.getElementById('screenshots-header').addEventListener('click', () => {
-    togglePanel('screenshots-content');
-  });
-
-  // Add event listener for export button
-  document.getElementById('export-btn').addEventListener('click', () => {
-    exportDomainData(domain, data);
-  });
-
-  // Add event listeners for nuclei findings
-  document.querySelectorAll('.nuclei-detail-btn').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      const findingIndex = e.target.getAttribute('data-index');
-      showNucleiDetail(data.nucleiFindings[findingIndex]);
+    
+    // Add event listeners for collapsible panels
+    document.getElementById('subdomains-header').addEventListener('click', () => {
+        togglePanel('subdomains-content');
     });
-  });
-
-  // Add event listeners for screenshot thumbnails
-  document.querySelectorAll('.screenshot-thumbnail').forEach(img => {
-    img.addEventListener('click', (e) => {
-      const src = e.target.getAttribute('data-full-src');
-      const hostname = e.target.getAttribute('data-hostname');
-      showScreenshot(src, hostname);
+    
+    document.getElementById('nuclei-header').addEventListener('click', () => {
+        togglePanel('nuclei-content');
     });
-  });
+    
+    document.getElementById('wayback-header').addEventListener('click', () => {
+        togglePanel('wayback-content');
+    });
+    
+    document.getElementById('screenshots-header').addEventListener('click', () => {
+        togglePanel('screenshots-content');
+    });
+    
+    // Add event listener for export button
+    document.getElementById('export-btn').addEventListener('click', () => {
+        exportDomainData(domain, data);
+    });
+    
+    // Add event listeners for nuclei findings
+    document.querySelectorAll('.nuclei-detail-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            const findingIndex = e.target.getAttribute('data-index');
+            showNucleiDetail(data.nucleiFindings[findingIndex]);
+        });
+    });
+    
+    // Add event listeners for screenshot thumbnails
+    document.querySelectorAll('.screenshot-thumbnail').forEach(img => {
+        img.addEventListener('click', (e) => {
+            const src = e.target.getAttribute('data-full-src');
+            const hostname = e.target.getAttribute('data-hostname');
+            showScreenshot(src, hostname);
+        });
+    });
 }
 
 // Toggle panel visibility
 function togglePanel(panelId) {
-  const panel = document.getElementById(panelId);
-  panel.classList.toggle('collapsed');
+    const panel = document.getElementById(panelId);
+    panel.classList.toggle('collapsed');
 }
 
 // Render subdomains table
 function renderSubdomainsTable(subdomains, data) {
-  if (subdomains.length === 0) {
-    return '<div class="empty-state">No subdomains found</div>';
-  }
-
-  return `
+    if (subdomains.length === 0) {
+        return '<div class="empty-state">No subdomains found</div>';
+    }
+    
+    return `
         <div class="table-container">
             <table>
                 <thead>
@@ -631,36 +635,36 @@ function renderSubdomainsTable(subdomains, data) {
 
 // Get screenshot thumbnail for a hostname
 function getScreenshotThumbnail(hostname, screenshots, domain) {
-  // Try to find a matching screenshot
-  const screenshotFile = screenshots.find(file => {
-    // Convert filename to hostname format for comparison
-    const fileHostname = file
-      .replace(/^https---/, '')
-      .replace(/^http---/, '')
-      .replace(/-(\d+)\.(jpe?g|png|gif|webp)$/i, '')
-      .replace(/-/g, '.');
-
-    return fileHostname === hostname;
-  });
-
-  if (screenshotFile) {
-    return `<img class="thumbnail screenshot-thumbnail" 
+    // Try to find a matching screenshot
+    const screenshotFile = screenshots.find(file => {
+        // Convert filename to hostname format for comparison
+        const fileHostname = file
+            .replace(/^https---/, '')
+            .replace(/^http---/, '')
+            .replace(/-(\d+)\.(jpe?g|png|gif|webp)$/i, '')
+            .replace(/-/g, '.');
+        
+        return fileHostname === hostname;
+    });
+    
+    if (screenshotFile) {
+        return `<img class="thumbnail screenshot-thumbnail" 
                     src="${base_directory}${domain}/screenshots/${screenshotFile}" 
                     data-full-src="${base_directory}${domain}/screenshots/${screenshotFile}"
                     data-hostname="${hostname}"
                     alt="${hostname}">`;
-  }
-
-  return '<span class="badge">No screenshot</span>';
+    }
+    
+    return '<span class="badge">No screenshot</span>';
 }
 
 // Render nuclei findings
 function renderNucleiFindings(findings) {
-  if (findings.length === 0) {
-    return '<div class="empty-state">No nuclei findings</div>';
-  }
-
-  return `
+    if (findings.length === 0) {
+        return '<div class="empty-state">No nuclei findings</div>';
+    }
+    
+    return `
         <div class="table-container">
             <table>
                 <thead>
@@ -675,14 +679,13 @@ function renderNucleiFindings(findings) {
                 </thead>
                 <tbody>
                     ${findings.map((finding, index) => {
-    const severity = finding.severity || finding.info?.severity || 'unknown';
-    const templateId = finding.template - id || 'N/A';
-    console.log('templateid , ',templateId)
-    const name = finding.info?.name || 'N/A';
-    const host = finding.host || finding.matched - at || 'N/A';
-    const snippet = (finding.request || finding.response || '').substring(0, 200);
-
-    return `
+                        const severity = finding.severity || finding.info?.severity || 'unknown';
+                        const templateId = finding['template-id'] || 'N/A';
+                        const name = finding.info?.name || 'N/A';
+                        const host = finding.host || finding['matched-at'] || 'N/A';
+                        const snippet = (finding.request || finding.response || '').substring(0, 200);
+                        
+                        return `
                             <tr>
                                 <td><span class="badge ${severity}">${severity}</span></td>
                                 <td>${templateId}</td>
@@ -694,7 +697,7 @@ function renderNucleiFindings(findings) {
                                 </td>
                             </tr>
                         `;
-  }).join('')}
+                    }).join('')}
                 </tbody>
             </table>
         </div>
@@ -703,12 +706,12 @@ function renderNucleiFindings(findings) {
 
 // Render wayback URLs
 function renderWaybackUrls(waybackData) {
-  const subdomains = Object.keys(waybackData);
-  if (subdomains.length === 0) {
-    return '<div class="empty-state">No wayback URLs found</div>';
-  }
-
-  return `
+    const subdomains = Object.keys(waybackData);
+    if (subdomains.length === 0) {
+        return '<div class="empty-state">No wayback URLs found</div>';
+    }
+    
+    return `
         <div class="wayback-list">
             ${subdomains.map(sub => `
                 <div class="wayback-group">
@@ -726,21 +729,21 @@ function renderWaybackUrls(waybackData) {
 
 // Render screenshots
 function renderScreenshots(screenshots, domain) {
-  if (screenshots.length === 0) {
-    return '<div class="empty-state">No screenshots found</div>';
-  }
-
-  return `
+    if (screenshots.length === 0) {
+        return '<div class="empty-state">No screenshots found</div>';
+    }
+    
+    return `
         <div class="screenshots-grid">
             ${screenshots.map(file => {
-    // Extract hostname from filename
-    const hostname = file
-      .replace(/^https---/, '')
-      .replace(/^http---/, '')
-      .replace(/-(\d+)\.(jpe?g|png|gif|webp)$/i, '')
-      .replace(/-/g, '.');
-
-    return `
+                // Extract hostname from filename
+                const hostname = file
+                    .replace(/^https---/, '')
+                    .replace(/^http---/, '')
+                    .replace(/-(\d+)\.(jpe?g|png|gif|webp)$/i, '')
+                    .replace(/-/g, '.');
+                
+                return `
                     <div class="screenshot-item">
                         <img class="screenshot-thumbnail" 
                              src="${base_directory}${domain}/screenshots/${file}" 
@@ -750,16 +753,16 @@ function renderScreenshots(screenshots, domain) {
                         <div class="hostname">${hostname}</div>
                     </div>
                 `;
-  }).join('')}
+            }).join('')}
         </div>
     `;
 }
 
 // Show nuclei finding detail
 function showNucleiDetail(finding) {
-  const contentEl = document.getElementById('nuclei-detail-content');
-
-  contentEl.innerHTML = `
+    const contentEl = document.getElementById('nuclei-detail-content');
+    
+    contentEl.innerHTML = `
         <div class="severity-badge">
             <span class="badge ${finding.severity || finding.info?.severity || 'unknown'}">
                 ${finding.severity || finding.info?.severity || 'unknown'}
@@ -767,9 +770,9 @@ function showNucleiDetail(finding) {
         </div>
         
         <h3>${finding.info?.name || 'No name'}</h3>
-        <p><strong>Template ID:</strong> ${finding.template - id || 'N/A'}</p>
+        <p><strong>Template ID:</strong> ${finding['template-id'] || 'N/A'}</p>
         <p><strong>Host:</strong> ${finding.host || 'N/A'}</p>
-        <p><strong>Matched at:</strong> ${finding.matched - at || 'N/A'}</p>
+        <p><strong>Matched at:</strong> ${finding['matched-at'] || 'N/A'}</p>
         <p><strong>Timestamp:</strong> ${finding.timestamp || 'N/A'}</p>
         
         <h4>Request</h4>
@@ -782,85 +785,85 @@ function showNucleiDetail(finding) {
         <textarea class="textarea" placeholder="Add your notes here..."></textarea>
         
         <div style="margin-top: 1rem;">
-            <button class="button" onclick="copyToClipboard(JSON.stringify(${escapeHtml(JSON.stringify(finding, null, 2))}))">Copy JSON</button>
+            <button class="button" onclick="copyToClipboard('${escapeHtml(JSON.stringify(finding, null, 2))}')">Copy JSON</button>
             <button class="button" onclick="copyToClipboard('${escapeHtml(finding.request || '')}')">Copy Request</button>
             <button class="button" onclick="copyToClipboard('${escapeHtml(finding.response || '')}')">Copy Response</button>
         </div>
     `;
-
-  nucleiModalEl.style.display = 'block';
+    
+    nucleiModalEl.style.display = 'block';
 }
 
 // Show screenshot in lightbox
 function showScreenshot(src, hostname) {
-  const titleEl = document.getElementById('screenshot-title');
-  const contentEl = document.getElementById('screenshot-content');
-
-  titleEl.textContent = hostname;
-  contentEl.innerHTML = `
+    const titleEl = document.getElementById('screenshot-title');
+    const contentEl = document.getElementById('screenshot-content');
+    
+    titleEl.textContent = hostname;
+    contentEl.innerHTML = `
         <img src="${src}" class="full-screenshot" alt="${hostname}">
         <div style="margin-top: 1rem; text-align: center;">
             <button class="button" onclick="downloadFile('${src}', '${hostname}.jpg')">Download</button>
         </div>
     `;
-
-  screenshotModalEl.style.display = 'block';
+    
+    screenshotModalEl.style.display = 'block';
 }
 
 // Export domain data as JSON
 function exportDomainData(domain, data) {
-  const exportData = {
-    domain,
-    timestamp: new Date().toISOString(),
-    subdomains: data.subdomains,
-    aliveHosts: data.aliveHosts,
-    nucleiFindings: data.nucleiFindings,
-    waybackUrls: data.waybackUrls,
-    screenshots: data.screenshots
-  };
-
-  const jsonString = JSON.stringify(exportData, null, 2);
-  const blob = new Blob([jsonString], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `${domain}-recon-data.json`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+    const exportData = {
+        domain,
+        timestamp: new Date().toISOString(),
+        subdomains: data.subdomains,
+        aliveHosts: data.aliveHosts,
+        nucleiFindings: data.nucleiFindings,
+        waybackUrls: data.waybackUrls,
+        screenshots: data.screenshots
+    };
+    
+    const jsonString = JSON.stringify(exportData, null, 2);
+    const blob = new Blob([jsonString], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${domain}-recon-data.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
 }
 
 // Utility function to escape HTML
 function escapeHtml(unsafe) {
-  if (typeof unsafe !== 'string') return unsafe;
-  return unsafe
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
+    if (typeof unsafe !== 'string') return unsafe;
+    return unsafe
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
 }
 
 // Utility function to copy text to clipboard
 function copyToClipboard(text) {
-  navigator.clipboard.writeText(text).then(() => {
-    // Show some feedback that text was copied
-    console.log('Copied to clipboard:', text);
-  }).catch(err => {
-    console.warn('Failed to copy:', err);
-  });
+    navigator.clipboard.writeText(text).then(() => {
+        // Show some feedback that text was copied
+        console.log('Copied to clipboard:', text);
+    }).catch(err => {
+        console.warn('Failed to copy:', err);
+    });
 }
 
 // Utility function to download a file
 function downloadFile(url, filename) {
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
 }
 
 // Initialize the app when the DOM is loaded
