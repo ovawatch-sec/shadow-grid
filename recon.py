@@ -6,7 +6,7 @@ if __name__ == '__main__':
     import argparse
     from core.banner import banner
     from core.utils import load_out_of_scope, filter_out_of_scope, save_to_file,run_command
-    import modules.vuln_scan as vuln_scan
+    import modules.web_scan as web_scan
     import modules.subdomain_enum as enum
     import modules.alive_check as alive
     import modules.screenshots as screenshots
@@ -19,11 +19,13 @@ if __name__ == '__main__':
         parser = argparse.ArgumentParser(description='Recon Automation Framework')
         parser.add_argument('-t','--target', help='Domain or file with domains')
         parser.add_argument('--oos', help='File with out-of-scope domains/wildcards')
-        parser.add_argument('--rate', type=int, default=2, help='Max requests per second (default=2)')
-        parser.add_argument('--header', action='append', help='Custom header(s)')
-        parser.add_argument('--user-agent', help='Custom User Agent')
+        parser.add_argument('--rate-limit', type=int, default=2, help='Max requests per second (default=2)')
+        parser.add_argument('-p','--port', type=int,default=8000, help='Dashboard web port (defaut: 8000)')
+        parser.add_argument('-H','--header', action='append', help='Custom header(s) (example. Accept:application/json "User-Agent: <username>-Mozilla/5.0 Firefox/128.0" )')
         parser.add_argument('-o','--output', default='output', help='Results output file')
         parser.add_argument('-l','--list',action='store_true',help='List of tools used')
+        parser.add_argument('--fuzz',default=False,action='store_true',help='Enable subdomain fuzzing')
+        parser.add_argument('-w','--wordlist',default='',help='Wordlist')
         parser.add_argument('--dashboard',default=True,action='store_true',help='Enable dashboard for the results at http://localhost:8000/app')
         parser.add_argument(
         '--skip-tools',
@@ -150,12 +152,16 @@ if __name__ == '__main__':
             
             # check for vulnerabilities using nuclei 
             if 'nuclei' not in skip_tools:
-                vuln_scan.run_nuclei(alive_file,raw_output_dir)
-        
+                web_scan.run_nuclei(alive_file,raw_output_dir)
+
+            # fuzz the domain if enabled 
+            if args.fuzz:
+                for dom in alive_domains:
+                    web_scan.run_fuzzing(dom, raw_output_dir)
         # launch the web dashboard 
         if args.dashboard:
-            print(f"{GREEN}[+] Launching the dashboard on port 8000, visit http://localhost:8000 to access it{RESET}")
-            run_command(['python3','-m','http.server','8000'])
+            print(f"{GREEN}[+] Launching the dashboard on port {args.port}, visit {PURPLE}http://localhost:{args.port}/app{GREEN} to access it{RESET}")
+            run_command(['python3','-m','http.server',f'{args.port}'])
 
         print(f"""
 ============================================================================================================================================================

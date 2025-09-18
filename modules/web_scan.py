@@ -1,10 +1,22 @@
-# modules/vuln_scan.py
+# modules/web_scan.py
 import subprocess
 from pathlib import Path
 import shutil
 from core.colors import RED,GREEN,RESET
 from core.utils import save_to_file, run_command
 
+def run_fuzzing(domain, output_dir,rate_limit=0,wordlist=None, headers=None):
+    outfile = output_dir / f'{domain}_fuzz.json'
+    cmd = f'feroxbuster -u {domain} -o {outfile} --rate-limit {rate_limit}'
+    if headers is not None:
+        cmd = f'{cmd} -H {headers}'
+    if wordlist is not None:
+        cmd = f'{cmd} -w {wordlist}'
+    try:
+        run_command(cmd.split(' '))
+    except subprocess.TimeoutExpired:
+        print(f"{RED}[-] feroxbuster timed out{RESET}")
+    
 def run_nuclei(input_file, output_dir: Path, timeout=300):
     """
     Run nuclei on a list of targets from input_file.
