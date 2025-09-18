@@ -5,7 +5,7 @@ from core.colors import PURPLE
 if __name__ == '__main__':
     import argparse
     from core.banner import banner
-    from core.utils import load_out_of_scope, filter_out_of_scope
+    from core.utils import load_out_of_scope, filter_out_of_scope, save_to_file
     import modules.vuln_scan as vuln_scan
     import modules.subdomain_enum as enum
     import modules.alive_check as alive
@@ -54,9 +54,19 @@ if __name__ == '__main__':
             domains = [args.target]
 
         for domain in domains:
+            print(f"{PURPLE}[!] Target Domain {domain}{RESET}")
             output_dir_name = args.output
             output_dir = Path(output_dir_name) / domain
             output_dir.mkdir(parents=True, exist_ok=True)
+
+            # create the raw directory
+            raw_output_dir = Path(output_dir) / 'raw'
+            raw_output_dir.mkdir(parents=True, exist_ok=True)
+
+             
+            # create the wayback directory
+            wayback_output_dir = Path(output_dir) / 'waybackurls'
+            wayback_output_dir.mkdir(parents=True, exist_ok=True)
             oos_list = load_out_of_scope(args.oos)
 
             # Run each tool individually and save to files
@@ -89,7 +99,7 @@ if __name__ == '__main__':
 
             if 'amass' not in skip_tools:
                 am_file = output_dir / "amass.txt"
-                tools_results['amass'] = enum.run_amass(domain, outfile=am_file)
+                tools_results['amass'] = enum.run_amass(domain, raw_output_dir,outfile=am_file)
 
                 # read the content of the file
                 with open(am_file, 'r') as f:
@@ -107,8 +117,7 @@ if __name__ == '__main__':
             all_subs = filter_out_of_scope(all_subs,oos_list)
             # Save the final merged subdomains
             all_file = output_dir / "all_subs.txt"
-            with open(all_file, 'w') as f:
-                f.write("\n".join(sorted(all_subs)))
+            save_to_file(sorted(all_subs),all_file)
 
             # get alive sub domains
             if 'httprobe' not in skip_tools:
@@ -126,21 +135,21 @@ if __name__ == '__main__':
 
                 # Save the alive domains
                 alive_file = output_dir / 'alive_subs.txt'
-                with open(alive_file, 'w') as f:
-                    f.write("\n".join(alive_domains))
+                save_to_file(alive_domains,alive_file)
 
                 if alive_domains and 'gowitness' not in skip_tools:
-                    screenshots.run_gowitness(alive_domains, output_dir)
+                    screenshots.run_gowitness(alive_file, output_dir)
             elif 'gowitness' not in skip_tools:
-                screenshots.run_gowitness(all_subs, output_dir)
+                screenshots.run_gowitness(alive_file, output_dir)
 
             # fetch historical urls
             if 'waybackurls' not in skip_tools:
-                hist.run_waybackurls(domain, output_dir)
+                for dom in alive_domains:
+                    hist.run_waybackurls(dom, wayback_output_dir)
             
             # check for vulnerabilities using nuclei 
             if 'nuclei' not in skip_tools:
-                vuln_scan.run_nuclei(all_file,output_dir)
+                vuln_scan.run_nuclei(alive_file,raw_output_dir)
         
         print(f"""
 ============================================================================================================================================================
@@ -156,6 +165,6 @@ if __name__ == '__main__':
     except Exception as e:
         print(f"""
 ============================================================================================================================================================
-{RED}[-] An Error Occured!!! {e}{RESET}
+{RED}[-] An Error Occured!!! \n{e}{RESET}
 ============================================================================================================================================================
         """)

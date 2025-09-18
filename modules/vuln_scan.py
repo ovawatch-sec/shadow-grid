@@ -3,6 +3,7 @@ import subprocess
 from pathlib import Path
 import shutil
 from core.colors import RED,GREEN,RESET
+from core.utils import save_to_file, run_command
 
 def run_nuclei(input_file, output_dir: Path, timeout=300):
     """
@@ -24,16 +25,8 @@ def run_nuclei(input_file, output_dir: Path, timeout=300):
         "-json-export", str(output_file)
     ]
 
-    print(f"{GREEN}[+] Running: {' '.join(cmd)}{RESET}")
-
     try:
-        proc = subprocess.run(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            timeout=timeout
-        )
+        proc = run_command(cmd)
     except subprocess.TimeoutExpired:
         print(f"{RED}[-] nuclei timed out{RESET}")
         return []

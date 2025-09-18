@@ -1,6 +1,7 @@
 import subprocess
 from pathlib import Path
 from core.colors import RED,GREEN,RESET
+from core.utils import run_command,save_to_file
 
 def run_httprobe(infile, outfile=None):
     infile = Path(infile)
@@ -25,8 +26,6 @@ def run_httprobe(infile, outfile=None):
 
     results = sorted(set(proc.stdout.splitlines()))
 
-    if outfile:
-        with open(outfile, "w") as f:
-            f.write("\n".join(set(results)))
+    save_to_file(results,outfile)
 
     return results
