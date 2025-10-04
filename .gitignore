@@ -1,9 +1,23 @@
-# Ignore everything
-*
 
 # Except these files
 !stet.py
 !README
 !README.md
+!Readme.md
 !.gitignore
 !bug-ovawatch.py
+!bug-old.py
+!core/*
+!modules/*
+!data/*
+
+
+**/__pycache/
+output/
+pycache/
+**/*.pyc 
+**/*.pyo
+**/*.pyd
+logs.txt
+targets.txt
+**/*.state

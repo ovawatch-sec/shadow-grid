@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bug Ovawatch Framework Recon Dashboard</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Bug Ovawatch Framework Recon Dashboard</h1>
+            <div class="search-container">
+                <input type="text" id="global-search" placeholder="Search subdomains and findings...">
+            </div>
+        </header>
+
+        <div class="main-content">
+            <aside class="sidebar" id="domains-sidebar">
+                <h2>Domains</h2>
+                <div id="domains-list"></div>
+            </aside>
+
+            <main class="content-panel">
+                <div id="domain-data">
+                    <div class="placeholder">
+                        <p>Select a domain from the sidebar to view results</p>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <!-- Nuclei Finding Detail Modal -->
+    <div id="nuclei-modal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2>Nuclei Finding Details</h2>
+            <div id="nuclei-detail-content"></div>
+        </div>
+    </div>
+
+    <!-- Screenshot Lightbox Modal -->
+    <div id="screenshot-modal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2 id="screenshot-title"></h2>
+            <div id="screenshot-content"></div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
