@@ -1,28 +1,8 @@
 # modules/web_scan.py
 import subprocess
 from pathlib import Path
-import shutil
-from core.colors import RED,GREEN,RESET
-from core.utils import save_to_file, run_command
-
-def run_fuzzing(domain, output_dir,rate_limit=0,wordlist=None, headers=None, http_proto=443):
-    outfile = output_dir / f'{domain}_fuzz.json'
-    url =''
-    if http_proto == 80:
-        url= f'http://{domain}'
-    else:
-        url = f'https://{domain}'
-
-    cmd = f'feroxbuster -u {url} -o {outfile} --rate-limit {rate_limit} --protocol {http_proto}'
-    
-    if headers is not None:
-        cmd = f'{cmd} -H "{headers}"'
-    if wordlist is not None:
-        cmd = f'{cmd} -w {wordlist}'
-    try:
-        run_command(cmd.split(' '))
-    except subprocess.TimeoutExpired:
-        print(f"{RED}[-] feroxbuster timed out{RESET}")
+from core.colors import RED,RESET
+from core.utils import run_command
     
 def run_nuclei(input_file, output_dir: Path, timeout=300):
     """
@@ -68,4 +48,20 @@ def run_nuclei(input_file, output_dir: Path, timeout=300):
         print(f"{RED}[-] nuclei did not produce output file{RESET}")
         return []
 
-    
+def run_naabu(infile, output_dir):
+    infile = Path(infile)
+    if not infile.exists():
+        print(f"{RED}[-] Input file not found: {infile}{RESET}")
+        return []
+    outfile = output_dir / 'naabu.txt'
+    run_command(["naabu", '-top-ports','full',"-host",str(infile) ,"-o",str(outfile)])
+
+def run_katana(infile, output_dir):
+    infile = Path(infile)
+    if not infile.exists():
+        print(f"{RED}[-] Input file not found: {infile}{RESET}")
+        return []
+    with open(infile,'r') as file:
+        domain = file.readline().strip()
+        outfile = output_dir / f'{domain}_katana.txt'
+        run_command(["katana", '-u',domain,"-jsl","-o",str(outfile)])
