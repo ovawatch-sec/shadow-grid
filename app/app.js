@@ -155,8 +155,8 @@ async function loadDomainData(domain) {
             fetchTextFile(`${base_directory}${domain}/subfinder.txt`),
             fetchTextFile(`${base_directory}${domain}/sublist3r.txt`),
             fetchTextFile(`${base_directory}${domain}/crt.sh.txt`),
-            fetchTextFile(`${base_directory}${domain}/all_subs.txt`),
-            fetchTextFile(`${base_directory}${domain}/alive_subs.txt`),
+            fetchTextFile(`${base_directory}${domain}/subdomains.txt`),
+            fetchTextFile(`${base_directory}${domain}/alive_subdomains.txt`),
             fetchTextFile(`${base_directory}${domain}/alive_urls.txt`),
             fetchTextFile(`${base_directory}${domain}/raw/amass_raw.txt`),
             fetchNucleiData(`${base_directory}${domain}/raw/nuclei_results.json`),
@@ -331,53 +331,8 @@ async function fetchFuzzingData(domain) {
     }
 }
 
-// Fetch and parse a fuzzing file
-async function fetchFuzzingFile(url) {
-    try {
-        const response = await fetch(url);
-        if (!response.ok) return [];
-        const text = await response.text();
-        
-        // Parse the text format (not JSON)
-        
-        return parseFuzzingText(text);
-    } catch (error) {
-        console.warn(`Failed to fetch fuzzing file ${url}:`, error);
-        return [];
-    }
-}
 
-// Parse fuzzing text data
-function parseFuzzingText(text) {
-    const lines = text.split('\n');
-    const results = [];
-    console.log(text)
-    for (const line of lines) {
-        if (!line.trim()) continue;
-        
-        // Skip configuration lines and MSG lines
-        if (line.startsWith('Configuration') || line.startsWith('MSG')) continue;
-        
-        // Parse the fuzzing result line
-        // Format: STATUS METHOD LINESl WORDSw CHARSc URL [=> REDIRECT]
-        const match = line.match(/^(\d+)\s+([A-Z]+)\s+(\d+)l\s+(\d+)w\s+(\d+)c\s+(\S+)(?:\s+=>\s+(\S+))?/);
-        
-        if (match) {
-            const [, status, method, lines, words, chars, url, redirect] = match;
-            results.push({
-                status: parseInt(status),
-                method,
-                lines: parseInt(lines),
-                words: parseInt(words),
-                chars: parseInt(chars),
-                url,
-                redirect: redirect || null
-            });
-        }
-    }
     
-    return results;
-}
 
 // Process subdomains from various sources
 function processSubdomains(domain, amassData, assetfinderData, subfinderData, sublist3rData, crtshData, allSubsData) {
@@ -405,9 +360,7 @@ function processSubdomains(domain, amassData, assetfinderData, subfinderData, su
     processFile(amassData, 'amass');
     processFile(assetfinderData, 'assetfinder');
     processFile(subfinderData, 'subfinder');
-    processFile(sublist3rData, 'sublist3r');
-    processFile(crtshData, 'crt.sh');
-    processFile(allSubsData, 'all_subs');
+    processFile(allSubsData, 'subdomains');
     
     // Convert Map to Array and sort
     return Array.from(subdomains.values())
@@ -458,7 +411,7 @@ function isSubdomainOf(hostname, domain) {
 function processAliveHosts(aliveSubsData, aliveUrlsData) {
     const aliveHosts = new Set();
     
-    // Process alive_subs.txt
+    // Process alive_subdomains.txt
     if (aliveSubsData.status === 'fulfilled') {
         aliveSubsData.value.forEach(hostname => {
             if (hostname) aliveHosts.add(hostname);
@@ -535,11 +488,6 @@ function renderDomainData(domain) {
         waybackUrlCount += data.waybackUrls[sub].length;
     }
     
-    // Count fuzzing results
-    let fuzzingResultCount = 0;
-    for (const sub in data.fuzzingResults) {
-        fuzzingResultCount += data.fuzzingResults[sub].length;
-    }
     
     // Render the domain data
     domainDataEl.innerHTML = `
@@ -572,10 +520,6 @@ function renderDomainData(domain) {
             <div class="card">
                 <h3>Amass Records</h3>
                 <div class="value">${data.amassRawRecords.length}</div>
-            </div>
-            <div class="card">
-                <h3>Fuzzing Results</h3>
-                <div class="value">${fuzzingResultCount}</div>
             </div>
         </div>
         
@@ -628,16 +572,7 @@ function renderDomainData(domain) {
                 ${renderAmassRawTable(data.amassRawRecords)}
             </div>
         </div>
-        
-        <div class="panel">
-            <div class="panel-header" id="fuzzing-header">
-                <h2>Fuzzing Results (${fuzzingResultCount})</h2>
-                <span>▼</span>
-            </div>
-            <div class="panel-content" id="fuzzing-content">
-                ${renderFuzzingResults(data.fuzzingResults)}
-            </div>
-        </div>
+
         
         <div class="panel">
             <div class="panel-header" id="nuclei-header">
@@ -682,9 +617,6 @@ function renderDomainData(domain) {
         togglePanel('amass-raw-content');
     });
     
-    document.getElementById('fuzzing-header').addEventListener('click', () => {
-        togglePanel('fuzzing-content');
-    });
     
     document.getElementById('nuclei-header').addEventListener('click', () => {
         togglePanel('nuclei-content');
@@ -810,47 +742,6 @@ function renderAmassRawTable(records) {
     `).join('');
 }
 
-// Render fuzzing results
-function renderFuzzingResults(fuzzingResults) {
-    const subdomains = Object.keys(fuzzingResults);
-    if (subdomains.length === 0) {
-        return '<div class="empty-state">No fuzzing results found</div>';
-    }
-    
-    return subdomains.map(subdomain => `
-        <div class="fuzzing-group">
-            <h3>${subdomain}</h3>
-            <div class="table-container">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Status</th>
-                            <th>Method</th>
-                            <th>URL</th>
-                            <th>Lines</th>
-                            <th>Words</th>
-                            <th>Chars</th>
-                            <th>Redirect</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${fuzzingResults[subdomain].map(result => `
-                            <tr>
-                                <td><span class="badge ${result.status >= 200 && result.status < 300 ? 'alive' : 'dead'}">${result.status}</span></td>
-                                <td>${result.method}</td>
-                                <td><a href="${result.url}" target="_blank">${result.url}</a></td>
-                                <td>${result.lines}</td>
-                                <td>${result.words}</td>
-                                <td>${result.chars}</td>
-                                <td>${result.redirect || ''}</td>
-                            </tr>
-                        `).join('')}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    `).join('');
-}
 
 // Get screenshot thumbnail for a hostname
 function getScreenshotThumbnail(hostname, screenshots, domain) {

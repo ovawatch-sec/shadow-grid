@@ -1,3 +1,4 @@
+from pathlib import Path
 import requests
 import subprocess
 from core.utils import run_command,save_to_file,extract_domains
@@ -7,44 +8,38 @@ def run_assetfinder(domain, outfile=None):
     result = run_command(["assetfinder", "--subs-only", domain],outfile)
     save_to_file(extract_domains(result.stdout.splitlines()),outfile)
 
-
 def run_subfinder(domain, outfile=None):
-    result =  run_command(["subfinder", "-silent", "-d", domain],outfile)
-    save_to_file(extract_domains(result.stdout.splitlines()),outfile)
-
-
-def run_sublist3r(domain, outfile=None):
-    result =  run_command(["sublist3r", "-d", domain],outfile)
-    save_to_file(extract_domains(result.stdout.splitlines()),outfile)
-
+    result =  run_command(["subfinder", "-silent", "-d", domain,'-all','-o',str(outfile)])
 
 def run_amass(domain, output_dir,outfile):
     raw_outfile = output_dir / 'amass_raw.txt'
-    result =  run_command(["amass", "enum","-passive","-d", domain,"-o",str(raw_outfile)],outfile)
-    save_to_file(extract_domains(result.stdout.splitlines()),outfile)
+    result =  run_command(["amass", "enum",'-silent',"-d", domain,"-o",str(raw_outfile)],outfile)
 
-
-def run_crt(domain, outfile=None):
+def run_shuffledns(domain, data_dir=None, wordlist=None,outfile=None):
+    resolver_file = data_dir/'resolvers.txt'
+    wordlist = wordlist or data_dir/'wordlists/dns.txt' 
+    result =  run_command(["shuffledns",'-silent', "-d", domain,'-w',str(wordlist),'-r',str(resolver_file),'-mode','bruteforce','-o',str(outfile)],outfile)
     
-    url = f"https://crt.sh?q={domain}&output=json"
-    print(f"{GREEN}[+] Quering {url} , output file = {outfile}{RESET}")
-    try:
-        resp = requests.get(url, timeout=30)
-        resp.raise_for_status()
-    except requests.RequestException as e:
-        print(f"{RED}[-] Error fetching data: {e}{RESET}")
+def run_alterx(infile, outfile=None):
+    infile = Path(infile)
+    if not infile.exists():
+        print(f"{RED}[-] Input file not found: {infile}{RESET}")
         return []
 
-    try:
-        data = resp.json()
-    except ValueError:
-        print(f"{RED}[-] Error parsing JSON response{RESET}")
+    # run alterx, feeding the file into stdin
+    print(f"{GREEN}[+] Running: alterx on {infile} to get subdomain permutations, output file {outfile}{RESET}")
+    with infile.open("r") as f:
+        proc = subprocess.run(
+            ["alterx",'-silent'],
+            stdin=f,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True
+        )
+
+    if proc.returncode != 0 and not proc.stdout:
+        print(f"{RED}[-] alterx failed: {proc.stderr.strip()}{RESET}")
         return []
-
-    # Collect all unique certificate names
-    names = sorted({entry["name_value"] for entry in data if "name_value" in entry})
-
-    # Save to file if requested
-    save_to_file(names,outfile)
-
-    return names
+    urls = proc.stdout.splitlines()
+    results = sorted(extract_domains(urls))
+    save_to_file(results,outfile)

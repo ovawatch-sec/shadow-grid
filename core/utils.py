@@ -7,7 +7,7 @@ def run_command(cmd,outfile=None,show=True):
     import subprocess
     if  show:
         outfile_info =''
-        if outfile:
+        if '-o' not in cmd and outfile:
             outfile_info= f', output file = {outfile}'
         print(f"{GREEN}[+] Running: {' '.join(cmd)}{outfile_info}{RESET}")
     result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
