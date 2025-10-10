@@ -21,3 +21,4 @@ pycache/
 logs.txt
 targets.txt
 **/*.state
+**/*.cfg

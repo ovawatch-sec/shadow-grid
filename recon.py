@@ -19,22 +19,23 @@ if __name__ == '__main__':
         parser = argparse.ArgumentParser(description='Recon Automation Framework')
         parser.add_argument('-t','--target', help='Domain or file with domains')
         parser.add_argument('--oos', help='File with out-of-scope domains/wildcards')
+        parser.add_argument('-pk','--pd-key', help='Project Discovery Key( required for running chaos-client )')
         parser.add_argument('--rate-limit', type=int, default=2, help='Max requests per second (default=2)')
-        parser.add_argument('-p','--port', type=int,default=8000, help='Dashboard web port (defaut: 8000)')
+        parser.add_argument('-p','--port', type=int,default=1337, help='Dashboard web port (defaut: 1337)')
         parser.add_argument('-H','--headers', action='append', help='Custom header(s) (example. Accept:application/json "User-Agent: <username>-Mozilla/5.0 Firefox/128.0" )')
         parser.add_argument('-l','--list',action='store_true',help='List of tools used')
         parser.add_argument('-w','--wordlist',default=None,help='Wordlist')
-        parser.add_argument('--dashboard',default=True,action='store_true',help='Enable dashboard for the results at http://localhost:8000/app')
+        parser.add_argument('--dashboard',default=True,action='store_true',help='Enable dashboard for the results at http://localhost:1337/app')
         parser.add_argument(
         '--skip-tools',
-        help='Comma-separated list of tools to skip (e.g., amass,assetfinder,gowitness)',
+        help='Comma-separated list of tools to skip (e.g., amass,assetfinder,alterx)',
         default=''
     )
         args = parser.parse_args()
         
         
         # Get the tools list 
-        tools_list = ['assetfinder','subfinder','shuffledns','amass','httprobe','waybackurls','gowitness','nuclei','urlfinder','katana']
+        tools_list = ['assetfinder','subfinder','shuffledns','amass','alterx','waybackurls','gowitness','nuclei','urlfinder','katana']
 
         if args.list:
             print(f"{PURPLE}[!] {BLUE}{', '.join(tools_list)}{RESET}")
@@ -96,57 +97,51 @@ if __name__ == '__main__':
                 af_file = output_dir / "assetfinder.txt"
                 enum.run_assetfinder(domain, outfile=af_file)
 
-                # read the content of the file
-                with open(af_file, 'r') as f:
-                    subdomains.update(line.strip() for line in f)
-
             if 'subfinder' not in skip_tools:
                 sf_file = output_dir / "subfinder.txt"
                 enum.run_subfinder(domain, outfile=sf_file)
-
-                # read the content of the file
-                with open(sf_file, 'r') as f:
-                    subdomains.update(line.strip() for line in f)
 
             if 'shuffledns' not in skip_tools:
                 sdns_file = output_dir / "shuffledns.txt"
                 enum.run_shuffledns(domain, data_dir, args.wordlist , outfile=sdns_file)
 
-                # read the content of the file
-                with open(sdns_file, 'r') as f:
-                    subdomains.update(line.strip() for line in f)
+            if 'chaos-client' not in skip_tools:
+                chaos_file = output_dir / "chaos-client.txt"
+                enum.run_chaos_client(domain, args.pd_key, outfile=chaos_file)
+
 
             if 'amass' not in skip_tools:
                 am_file = output_dir / "amass.txt"
                 enum.run_amass(domain, raw_output_dir,outfile=am_file)
 
-                # read the content of the file
-                with open(am_file, 'r') as f:
-                    subdomains.update(line.strip() for line in f)
-
+            subdomains = enum.load_existing_subdomains(output_dir)
             # Save the final merged subdomains
+             # Apply out-of-scope filter
+            subdomains = filter_out_of_scope(domain,subdomains,oos_list)
             subdomains_file = output_dir / "subdomains.txt"
             save_to_file(sorted(subdomains),subdomains_file)
 
             # get subdomain permutations 
-            alterx_file = output_dir / 'alterx.txt'
-            enum.run_alterx(subdomains_file,alterx_file)
+            if 'alterx' not in skip_tools:
+                alterx_file = output_dir / 'alterx.txt'
+                enum.run_alterx(subdomains_file,alterx_file)
 
             # get alive sub domains
             alive_subdomains_file = output_dir / 'alive_subdomains.txt'
-            alive.run_dnsx(alterx_file,alive_subdomains_file)
+            if 'alterx' not in skip_tools:
+                alive.run_dnsx(alterx_file,alive_subdomains_file)
+            else:
+                alive.run_dnsx(subdomains_file,alive_subdomains_file)
 
             # read the content of the file
             alive_subdomains = set()
             with open(alive_subdomains_file, 'r') as f:
                 alive_subdomains.update(line.strip() for line in f)
 
-             # Apply out-of-scope filter
-            alive_subdomains = filter_out_of_scope(alive_subdomains,oos_list)
-
             # run naabu to get open ports
-            naabu_file = output_dir / 'naabu.txt'
-            web_scan.run_naabu(alive_subdomains_file,naabu_file)
+            if 'naabu' not in skip_tools:
+                naabu_file = output_dir / 'naabu.txt'
+                web_scan.run_naabu(alive_subdomains_file,naabu_file)
 
             # run httpx to grep responses from the alive domains
             httpx_file = output_dir / 'httpx.txt'
@@ -154,16 +149,20 @@ if __name__ == '__main__':
 
             # read alive urls 
             if alive_subdomains and 'gowitness' not in skip_tools:
-                screenshots.run_gowitness(alive_subdomains_file, output_dir,http_proto=args.http_proto)
+                screenshots.run_gowitness(alive_subdomains_file, output_dir)
 
             if 'urlfinder' not in skip_tools:
                 # run url finder on naabu results
                 port_scanned_urls = set()
-                with open(naabu_file, 'r') as file:
-                    port_scanned_urls.update(line.strip() for line in f)
+                if 'naabu' not in skip_tools:
+                    with open(naabu_file, 'r') as file:
+                        port_scanned_urls.update(line.strip() for line in file)
+                else:
+                    with open(alive_subdomains_file, 'r') as file:
+                        port_scanned_urls.update(line.strip() for line in file)
+
                 
-                for dom in port_scanned_urls:
-                    hist.run_urlfinder(dom,urlfinder_output_dir)
+                hist.run_urlfinder(alive_subdomains_file,urlfinder_output_dir)
 
             # fetch historical urls
             if 'waybackurls' not in skip_tools:

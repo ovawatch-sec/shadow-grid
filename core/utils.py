@@ -23,13 +23,15 @@ def save_to_file_with_cmd_result(result:CompletedProcess[str],outfile=None):
         with open(outfile,'w') as f:
             f.write(result.stdout)
 
-def filter_out_of_scope(domains, oos_list):
+def filter_out_of_scope(domain,domains, oos_list):
     import fnmatch
     filtered = []
     for d in domains:
         if not any(fnmatch.fnmatch(d, pattern) for pattern in oos_list):
             filtered.append(d)
-    return list(set(filtered))
+    doms = [d for d in filtered if domain in d]
+    return list(set(doms))
+
 
 
 def load_out_of_scope(filepath):

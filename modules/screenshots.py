@@ -3,7 +3,7 @@ from pathlib import Path
 from core.colors import RED,RESET,GREEN
 from core.utils import run_command
 
-def run_gowitness(alive_subdomains, output_dir,http_proto=443):
+def run_gowitness(alive_subdomains_file, output_dir):
     """
     Run gowitness against a file of alive domains.
     Expects alive_domains (list of URLs) or a path to a file.
@@ -16,10 +16,10 @@ def run_gowitness(alive_subdomains, output_dir,http_proto=443):
 
     # If alive_domains is a list, save it into alive_subdomains.txt
     cmd = [
-        "gowitness", "scan", "file",
-        "-f", str(alive_subdomains),
-        "--timeout", "300",'--no-http'
-        "-s", str(screenshots_dir)
+        "gowitness", "scan", "file",'-f',
+         str(alive_subdomains_file),
+        "--timeout", "300",'--no-http',
+        '-s', str(screenshots_dir)
     ]
 
     proc = run_command(cmd)

@@ -48,20 +48,17 @@ def run_nuclei(input_file, output_dir: Path, timeout=300):
         print(f"{RED}[-] nuclei did not produce output file{RESET}")
         return []
 
-def run_naabu(infile, output_dir):
+def run_naabu(infile, outfile):
     infile = Path(infile)
     if not infile.exists():
         print(f"{RED}[-] Input file not found: {infile}{RESET}")
         return []
-    outfile = output_dir / 'naabu.txt'
-    run_command(["naabu", '-top-ports','full',"-host",str(infile) ,"-o",str(outfile)])
+    run_command(["naabu", '-top-ports','full',"-list",str(infile) ,"-o",str(outfile)])
 
 def run_katana(infile, output_dir):
-    infile = Path(infile)
-    if not infile.exists():
-        print(f"{RED}[-] Input file not found: {infile}{RESET}")
-        return []
-    with open(infile,'r') as file:
-        domain = file.readline().strip()
-        outfile = output_dir / f'{domain}_katana.txt'
-        run_command(["katana", '-u',domain,"-jsl","-o",str(outfile)])
+    if  Path(infile).exists():
+        with open(infile) as f:
+            domains = sorted(set(line.strip() for line in f if line.strip()))
+            for domain in domains:
+                outfile = output_dir / f"{domain}_katana.txt"
+                run_command(["katana", '-u',domain,"-jsl","-o",str(outfile)])
