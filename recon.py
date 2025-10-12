@@ -155,15 +155,10 @@ if __name__ == '__main__':
                 # run url finder on naabu results
                 port_scanned_urls = set()
                 if 'naabu' not in skip_tools:
-                    with open(naabu_file, 'r') as file:
-                        port_scanned_urls.update(line.strip() for line in file)
+                    hist.run_urlfinder(naabu_file,urlfinder_output_dir)
                 else:
-                    with open(alive_subdomains_file, 'r') as file:
-                        port_scanned_urls.update(line.strip() for line in file)
-
+                    hist.run_urlfinder(alive_subdomains_file,urlfinder_output_dir)
                 
-                hist.run_urlfinder(alive_subdomains_file,urlfinder_output_dir)
-
             # fetch historical urls
             if 'waybackurls' not in skip_tools:
                 for dom in alive_subdomains:

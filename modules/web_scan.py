@@ -53,7 +53,7 @@ def run_naabu(infile, outfile):
     if not infile.exists():
         print(f"{RED}[-] Input file not found: {infile}{RESET}")
         return []
-    run_command(["naabu", '-top-ports','full',"-list",str(infile) ,"-o",str(outfile)])
+    run_command(["naabu", '-top-ports','100',"-list",str(infile) ,"-o",str(outfile)])
 
 def run_katana(infile, output_dir):
     if  Path(infile).exists():
