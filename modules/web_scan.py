@@ -4,7 +4,7 @@ from pathlib import Path
 from core.colors import RED,RESET
 from core.utils import run_command
     
-def run_nuclei(input_file, output_dir: Path, timeout=300):
+def run_nuclei(input_file, output_dir: Path, rate:int=2):
     """
     Run nuclei on a list of targets from input_file.
     Saves results in JSON format to output_dir/nuclei_results.json.
@@ -21,7 +21,8 @@ def run_nuclei(input_file, output_dir: Path, timeout=300):
     cmd = [
         "nuclei",
         "-list", str(input_file),
-        "-json-export", str(output_file)
+        "-json-export", str(output_file),
+        '-rate-limit',str(rate)
     ]
 
     try:
@@ -48,12 +49,12 @@ def run_nuclei(input_file, output_dir: Path, timeout=300):
         print(f"{RED}[-] nuclei did not produce output file{RESET}")
         return []
 
-def run_naabu(infile, outfile):
+def run_naabu(infile, outfile,rate:int=2):
     infile = Path(infile)
     if not infile.exists():
         print(f"{RED}[-] Input file not found: {infile}{RESET}")
         return []
-    run_command(["naabu", '-top-ports','100',"-list",str(infile) ,"-o",str(outfile)])
+    run_command(["naabu", '-top-ports','100',"-list",str(infile) ,'-rate',str(rate),"-o",str(outfile)])
 
 def run_katana(infile, output_dir):
     if  Path(infile).exists():

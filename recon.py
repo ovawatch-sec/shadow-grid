@@ -141,7 +141,7 @@ if __name__ == '__main__':
             # run naabu to get open ports
             if 'naabu' not in skip_tools:
                 naabu_file = output_dir / 'naabu.txt'
-                web_scan.run_naabu(alive_subdomains_file,naabu_file)
+                web_scan.run_naabu(alive_subdomains_file,naabu_file,args.rate_limit)
 
             # run httpx to grep responses from the alive domains
             httpx_file = output_dir / 'httpx.txt'
