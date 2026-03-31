@@ -54,7 +54,7 @@ def run_naabu(infile, output_dir):
         print(f"{RED}[-] Input file not found: {infile}{RESET}")
         return []
     outfile = output_dir / 'naabu.txt'
-    run_command(["naabu", '-top-ports','full',"-host",str(infile) ,"-o",str(outfile)])
+    run_command(['sudo',"naabu", '-top-ports','full',"-host",str(infile) ,"-o",str(outfile)])
 
 def run_katana(infile, output_dir):
     infile = Path(infile)
