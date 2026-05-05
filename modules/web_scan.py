@@ -50,7 +50,6 @@ def run_katana(alive_urls_file, output_dir) -> list:
         print(f"{RED}[-] katana: input file missing or empty{RESET}")
         return []
 
-<<<<<<< dev
     outfile = output_dir / 'katana.txt'
 
     run_command([
@@ -62,15 +61,6 @@ def run_katana(alive_urls_file, output_dir) -> list:
         '-silent',
         '-o', str(outfile),
     ], timeout=900)
-=======
-def run_naabu(infile, output_dir):
-    infile = Path(infile)
-    if not infile.exists():
-        print(f"{RED}[-] Input file not found: {infile}{RESET}")
-        return []
-    outfile = output_dir / 'naabu.txt'
-    run_command(['sudo',"naabu", '-top-ports','full',"-host",str(infile) ,"-o",str(outfile)])
->>>>>>> main
 
     return read_lines(outfile)
 
