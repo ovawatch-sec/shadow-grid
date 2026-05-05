@@ -1,45 +1,125 @@
-# Recon Automation Framework - Required Tools
+# Bug-Ovawatch Recon Framework v2
 
-This script performs recon including subdomain enumeration, alive checks, and screenshots. Before using the script, you must manually install the following tools.
+Automated recon pipeline for bug bounty and pentest engagements.
 
-## Required Tools
+## Quick Start
 
-| Tool        | Purpose                         | Installation URL                                                                               |
-| ----------- | ------------------------------- | ---------------------------------------------------------------------------------------------- |
-| assetfinder | Subdomain enumeration           | [https://github.com/tomnomnom/assetfinder](https://github.com/tomnomnom/assetfinder)           |
-| subfinder   | Subdomain enumeration           | [https://github.com/projectdiscovery/subfinder](https://github.com/projectdiscovery/subfinder) |
-| amass       | Subdomain enumeration (passive) | [https://github.com/OWASP/Amass](https://github.com/OWASP/Amass)                               |
-| httpx       | Alive subdomain checking        | [https://github.com/projectdiscovery/httpx](https://github.com/projectdiscovery/httpx)         |
-| gowitness   | Screenshots of alive domains    | [https://github.com/sensepost/gowitness](https://github.com/sensepost/gowitness)               |
-| waybackurls | Fetch known URLs from the Wayback Machine | [https://github.com/tomnomnom/waybackurls](https://github.com/tomnomnom/waybackurls) |   
+```bash
+# Install all tools
+chmod +x setup.sh && ./setup.sh
 
-## Installation Notes
+# Basic run
+python3 recon.py -t example.com
 
-1. Ensure you have Go installed (required for some tools).
+# Multiple targets from file
+python3 recon.py -t targets.txt
 
-   * Linux: `sudo apt install golang-go`
-   * macOS: `brew install go`
-   * Windows: Download from [https://go.dev/dl/](https://go.dev/dl/)
+# Passive only (no active scanning)
+python3 recon.py -t example.com --passive-only
 
-2. Install each tool following the instructions on their respective GitHub pages.
+# Skip specific tools
+python3 recon.py -t example.com --skip-tools amass,gowitness,nuclei
 
-3. Verify installation by running each tool in the terminal. Example:
+# Resume interrupted run
+python3 recon.py -t example.com --resume
 
-   ```bash
-   assetfinder -h
-   subfinder -h
-   amass -h
-   httpx -h
-   gowitness -h
-   ```
+# With out-of-scope list and custom wordlist
+python3 recon.py -t example.com --oos oos.txt -w /path/to/wordlist.txt
+```
 
-4. Once all tools are installed, you can run the recon script:
+## Pipeline
 
-   ```bash
-   python recon.py --target example.com
-   ```
+| Phase | What runs | Tools |
+|-------|-----------|-------|
+| 1 | Passive recon | whois, asnmap, dig (records + zone transfer) |
+| 2 | Subdomain enumeration | crt.sh, assetfinder, subfinder, amass, shuffledns |
+| 3 | DNS resolution + OOS filter | alterx, dnsx |
+| 4 | HTTP probing | httpx (title, status, tech-detect) |
+| 5 | Port scanning | naabu (top 1000) |
+| 6 | Screenshots + tech fingerprint | gowitness, whatweb |
+| 7 | URL discovery | waybackurls, gau, katana, urlfinder |
+| 8 | Vulnerability scanning | nuclei (low–critical) |
+
+## Output Structure
+
+```
+output/
+└── example.com/
+    ├── whois.txt              # WHOIS record
+    ├── asn_ranges.txt         # IP ranges owned by target
+    ├── dns_records.txt        # A/AAAA/MX/TXT/NS/SOA/CNAME
+    ├── zone_transfer.txt      # AXFR results (if vulnerable)
+    ├── crt.sh.txt             # Certificate transparency hits
+    ├── assetfinder.txt
+    ├── subfinder.txt
+    ├── amass.txt
+    ├── shuffledns.txt
+    ├── subdomains.txt         # Merged unique subdomains
+    ├── alterx.txt             # Permutation candidates
+    ├── alive_subdomains.txt   # DNS-resolved alive hosts
+    ├── dnsx_records.txt       # Multi-record DNS dump of alive hosts
+    ├── httpx.jsonl            # Full httpx JSON output
+    ├── alive_urls.txt         # Clean URL list for downstream tools
+    ├── naabu.txt              # Open ports (host:port)
+    ├── whatweb.jsonl          # Technology fingerprints
+    ├── waybackurls/           # Historical URLs per subdomain
+    ├── gau/                   # GetAllURLs per subdomain
+    ├── katana/                # Active crawl results
+    ├── urlfinder/             # urlfinder results per subdomain
+    ├── screenshots/           # gowitness screenshots
+    └── raw/
+        ├── amass_raw.txt
+        └── nuclei_results.json
+```
+
+## Flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-t, --target` | required | Domain or file of domains |
+| `--oos` | — | Out-of-scope patterns file (wildcards OK) |
+| `-w, --wordlist` | data/wordlists/dns.txt | DNS brute-force wordlist |
+| `-p, --port` | 8000 | Dashboard port |
+| `--skip-tools` | — | Comma-separated tools to skip |
+| `--skip-check` | off | Skip startup dependency check |
+| `--resume` | off | Skip phases with existing output |
+| `--passive-only` | off | Stop after httpx (phase 4) |
+| `--no-dashboard` | off | Don't launch the web dashboard |
+| `-l, --list` | — | Print all tools and exit |
+
+## Tools Required
+
+All installed by `setup.sh`. Requires Go 1.21+.
+
+| Tool | Source |
+|------|--------|
+| assetfinder | tomnomnom/assetfinder |
+| subfinder | projectdiscovery/subfinder |
+| amass | owasp-amass/amass |
+| shuffledns | projectdiscovery/shuffledns |
+| alterx | projectdiscovery/alterx |
+| dnsx | projectdiscovery/dnsx |
+| httpx | projectdiscovery/httpx |
+| naabu | projectdiscovery/naabu |
+| nuclei | projectdiscovery/nuclei |
+| katana | projectdiscovery/katana |
+| gowitness | sensepost/gowitness |
+| waybackurls | tomnomnom/waybackurls |
+| gau | lc/gau |
+| urlfinder | projectdiscovery/urlfinder |
+| asnmap | projectdiscovery/asnmap |
+| whatweb | system package |
+| dig / whois | dnsutils / whois system package |
 
 ## Notes
 
-* Make sure your PATH includes the Go binaries if you installed tools using `go install`.
-* For any issues, consult the respective tool's GitHub documentation.
+- naabu runs without `sudo` by default (CONNECT scan mode). Add `sudo` for SYN
+  scan if you need speed on large target lists.
+- nuclei timeout is 1 hour. For large targets consider `--skip-tools nuclei`
+  and run it separately.
+- The dashboard is served by Python's `http.server` from the project root.
+  Visit `http://localhost:8000/app` after recon completes.
+
+## Disclaimer
+
+Only test systems you have explicit written permission to test.

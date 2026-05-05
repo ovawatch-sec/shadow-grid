@@ -1,53 +1,68 @@
-# modules/web_scan.py
-import subprocess
+"""
+modules/web_scan.py
+Port scanning (naabu), web crawling (katana), vulnerability scanning (nuclei).
+"""
 from pathlib import Path
-from core.colors import RED,RESET
-from core.utils import run_command
-    
-def run_nuclei(input_file, output_dir: Path, timeout=300):
+
+from core.utils import run_command, read_lines
+from core.colors import RED, GREEN, RESET, ORANGE
+
+
+def run_naabu(infile, outfile) -> list:
     """
-    Run nuclei on a list of targets from input_file.
-    Saves results in JSON format to output_dir/nuclei_results.json.
+    Port scan a list of hosts using naabu.
+
+    FIX from v1:
+    - v1 used -host flag which expects a single host, not a file → replaced with -list
+    - v1 had 'sudo naabu' hardcoded — naabu needs raw socket access for SYN scan,
+      but falls back to CONNECT scan without sudo. Removed sudo; add it yourself
+      if you want SYN scan performance.
+    - v1 used -top-ports full (all 65535) which takes very long on large target lists.
+      Changed to -top-ports 1000 by default. Pass a custom port range if needed.
     """
-
-    output_dir.mkdir(parents=True, exist_ok=True)
-    input_file = Path(input_file)
-    output_file = output_dir / "nuclei_results.json"
-
-    if not input_file.exists():
-        print(f"{RED}[-] Input file not found: {input_file}{RESET}")
+    infile = Path(infile)
+    if not infile.exists() or infile.stat().st_size == 0:
+        print(f"{RED}[-] naabu: input file missing or empty{RESET}")
         return []
 
-    cmd = [
-        "nuclei",
-        "-list", str(input_file),
-        "-json-export", str(output_file)
-    ]
+    run_command([
+        'naabu', '-silent',
+        '-list', str(infile),
+        '-top-ports', '1000',
+        '-o', str(outfile),
+    ], timeout=900)
 
-    try:
-        proc = run_command(cmd)
-    except subprocess.TimeoutExpired:
-        print(f"{RED}[-] nuclei timed out{RESET}")
+    return read_lines(outfile)
+
+
+def run_katana(alive_urls_file, output_dir) -> list:
+    """
+    Crawl alive URLs with katana for endpoint and JS discovery.
+
+    FIX from v1:
+    - v1 only read the first line of the input file and ran katana on one domain
+    - v1 used -jsl but not -list; now uses -list to process all URLs in one pass
+    """
+    alive_urls_file = Path(alive_urls_file)
+    output_dir = Path(output_dir)
+
+    if not alive_urls_file.exists() or alive_urls_file.stat().st_size == 0:
+        print(f"{RED}[-] katana: input file missing or empty{RESET}")
         return []
 
-    if proc.returncode != 0:
-        print(f"{RED}[-] nuclei failed: {proc.stderr.strip()}{RESET}")
-        return []
+<<<<<<< dev
+    outfile = output_dir / 'katana.txt'
 
-    # nuclei writes JSON to file; read it back
-    if output_file.exists():
-        import json
-        try:
-            with output_file.open() as f:
-                results = json.load(f)
-        except json.JSONDecodeError:
-            print(f"{RED}[-] Failed to parse nuclei JSON output{RESET}")
-            results = []
-        return results
-    else:
-        print(f"{RED}[-] nuclei did not produce output file{RESET}")
-        return []
-
+    run_command([
+        'katana',
+        '-list', str(alive_urls_file),
+        '-jsl',          # JavaScript link extraction
+        '-jc',           # JavaScript crawling
+        '-d', '3',       # crawl depth
+        '-silent',
+        '-o', str(outfile),
+    ], timeout=900)
+=======
 def run_naabu(infile, output_dir):
     infile = Path(infile)
     if not infile.exists():
@@ -55,13 +70,37 @@ def run_naabu(infile, output_dir):
         return []
     outfile = output_dir / 'naabu.txt'
     run_command(['sudo',"naabu", '-top-ports','full',"-host",str(infile) ,"-o",str(outfile)])
+>>>>>>> main
 
-def run_katana(infile, output_dir):
+    return read_lines(outfile)
+
+
+def run_nuclei(infile, outfile) -> list:
+    """
+    Run nuclei against alive URLs, outputting JSON-lines for dashboard consumption.
+
+    FIX from v1:
+    - v1 used -json-export which outputs a JSON array — fails to parse if nuclei
+      crashes mid-run. Using -json (JSON-lines) is safer: each finding is a
+      self-contained line and partial output is still readable.
+    - Dashboard expects output at raw/nuclei_results.json — we write JSON-lines
+      to that path to keep compatibility.
+    """
     infile = Path(infile)
-    if not infile.exists():
-        print(f"{RED}[-] Input file not found: {infile}{RESET}")
+    if not infile.exists() or infile.stat().st_size == 0:
+        print(f"{RED}[-] nuclei: input file missing or empty{RESET}")
         return []
-    with open(infile,'r') as file:
-        domain = file.readline().strip()
-        outfile = output_dir / f'{domain}_katana.txt'
-        run_command(["katana", '-u',domain,"-jsl","-o",str(outfile)])
+
+    outfile = Path(outfile)
+    outfile.parent.mkdir(parents=True, exist_ok=True)
+
+    run_command([
+        'nuclei',
+        '-list', str(infile),
+        '-severity', 'low,medium,high,critical',
+        '-json',
+        '-o', str(outfile),
+        '-silent',
+    ], timeout=3600)
+
+    return read_lines(outfile)
