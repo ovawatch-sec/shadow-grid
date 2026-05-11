@@ -1,0 +1,316 @@
+<div class="page">
+  <div class="breadcrumb">
+    <a routerLink="/projects">Projects</a>
+    <span class="sep">›</span>
+    <span>Results</span>
+  </div>
+
+  @if (loading()) {
+    <div class="empty-state"><div class="spinner-sm"></div><span>Loading results…</span></div>
+  } @else {
+    <div class="results-header">
+      <h1 class="page-title">Results — {{scanId.slice(0,8)}}…</h1>
+      <button class="btn btn-outline btn-sm" (click)="exportJson()">↓ Export JSON</button>
+    </div>
+
+    <!-- Tab bar -->
+    <div class="tab-bar">
+      @for (t of tabs; track t.id) {
+        <button class="tab-btn" [class.active]="activeTab()===t.id" (click)="setTab(t.id)">
+          {{t.label}}
+          @if (tabCount(t.id)) { <span class="tab-cnt">{{tabCount(t.id)}}</span> }
+        </button>
+      }
+    </div>
+
+    <!-- ── OVERVIEW ── -->
+    @if (activeTab() === 'overview') {
+      <div class="stat-grid">
+        <div class="stat-card accent"><div class="stat-label">Subdomains</div><div class="stat-value green">{{subdomains().length}}</div></div>
+        <div class="stat-card accent"><div class="stat-label">Alive Hosts</div><div class="stat-value green">{{aliveCount()}}</div></div>
+        <div class="stat-card"><div class="stat-label">Open Ports</div><div class="stat-value cyan">{{ports().length}}</div></div>
+        <div class="stat-card" [class.danger]="critHigh()>0"><div class="stat-label">Vulnerabilities</div><div class="stat-value" [class.red]="critHigh()>0">{{vulns().length}}</div></div>
+        <div class="stat-card"><div class="stat-label">URLs Found</div><div class="stat-value">{{urls().length}}</div></div>
+        <div class="stat-card"><div class="stat-label">Screenshots</div><div class="stat-value">{{screenshots().length}}</div></div>
+      </div>
+      <div class="charts-row">
+        <div class="chart-card"><div class="chart-title">Severity Distribution</div><div style="position:relative;height:200px"><canvas id="chart-sev"></canvas></div></div>
+        <div class="chart-card"><div class="chart-title">Results by Tool</div><div style="position:relative;height:200px"><canvas id="chart-tools"></canvas></div></div>
+      </div>
+      <div class="card">
+        <div class="section-head"><span class="section-title">Top Findings</span></div>
+        @if (topVulns().length === 0) {
+          <div class="empty-state" style="color:var(--accent)"><span style="font-size:28px">✓</span><p>No vulnerabilities detected</p></div>
+        } @else {
+          @for (v of topVulns(); track $index) {
+            <div class="top-finding">
+              <span class="badge badge-{{v['severity']}}">{{v['severity']}}</span>
+              <span class="tf-name">{{v['name']}}</span>
+              <span class="tf-host">{{v['matched_at']}}</span>
+            </div>
+          }
+        }
+      </div>
+    }
+
+    <!-- ── SUBDOMAINS ── -->
+    @if (activeTab() === 'subdomains') {
+      <div class="filter-bar">
+        <div class="filter-search">
+          <span class="filter-icon">⌕</span>
+          <input [(ngModel)]="subQ" placeholder="Filter hostnames…" />
+        </div>
+        <select class="filter-select" [(ngModel)]="subStatus">
+          <option value="all">All Status</option>
+          <option value="alive">Alive Only</option>
+          <option value="dead">Dead Only</option>
+        </select>
+        <span class="filter-count">{{filteredSubs().length}} results</span>
+        <button class="btn btn-outline btn-sm" (click)="exportSubdomains()">↓ Export</button>
+      </div>
+      <div class="card" style="padding:0;overflow:hidden">
+        <div class="table-wrap">
+          <table>
+            <thead><tr>
+              <th>Hostname</th><th>Source</th><th>Status</th><th>HTTP Status</th><th>Title</th><th>Technologies</th><th>Actions</th>
+            </tr></thead>
+            <tbody>
+              @if (filteredSubs().length === 0) {
+                <tr><td colspan="7" style="text-align:center;padding:32px;color:var(--text-dim)">No subdomains match filters</td></tr>
+              }
+              @for (s of pagedSubs(); track $index) {
+                <tr>
+                  <td class="td-mono">{{s['host']}}</td>
+                  <td><span class="badge badge-tool">{{s['source']}}</span></td>
+                  <td><span class="badge" [class]="s['alive'] ? 'badge-alive' : 'badge-dead'">{{s['alive'] ? 'Alive' : 'Unknown'}}</span></td>
+                  <td>@if (s['status']) { <span class="badge" [class]="statusBadge(s['status'])">{{s['status']}}</span> }</td>
+                  <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px">{{s['title'] || '—'}}</td>
+                  <td>
+                    <div style="display:flex;gap:4px;flex-wrap:wrap">
+                      @for (t of (s['tech'] || []).slice(0, 3); track t) {
+                        <span class="tech-pill">{{t}}</span>
+                      }
+                    </div>
+                  </td>
+                  <td>
+                    <a class="btn btn-ghost btn-sm" [href]="'http://' + s['host']" target="_blank">↗</a>
+                    <button class="copy-btn" (click)="copyItem(s, 'host')">copy</button>
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+        @if (totalSubPages() > 1) {
+          <div class="pagination">
+            <button class="page-btn" (click)="subPage = subPage - 1" [disabled]="subPage === 0">‹</button>
+            <span>{{subPage + 1}} / {{totalSubPages()}}</span>
+            <button class="page-btn" (click)="subPage = subPage + 1" [disabled]="subPage >= totalSubPages() - 1">›</button>
+          </div>
+        }
+      </div>
+    }
+
+    <!-- ── DNS & ASSETS ── -->
+    @if (activeTab() === 'dns') {
+      <div class="card" style="margin-bottom:16px">
+        <div class="section-head"><span class="section-title">DNS Records</span></div>
+        @if (dnsRecords().length === 0) {
+          <div class="empty-state" style="padding:20px"><p>No DNS records</p></div>
+        } @else {
+          <div class="table-wrap"><table>
+            <thead><tr><th>Type</th><th>Record</th><th>Domain</th></tr></thead>
+            <tbody>
+              @for (r of dnsRecords(); track $index) {
+                <tr>
+                  <td><span class="badge badge-tool">{{r['type']}}</span></td>
+                  <td class="td-mono">{{r['record']}}</td>
+                  <td class="td-mono">{{r['domain']}}</td>
+                </tr>
+              }
+            </tbody>
+          </table></div>
+        }
+      </div>
+      <div class="card" style="margin-bottom:16px">
+        <div class="section-head"><span class="section-title">Zone Transfer</span></div>
+        @if (zoneResults().length > 0 && zoneResults()[0]['vulnerable']) {
+          <div class="alert alert-danger">⚠ Zone transfer SUCCESSFUL — DNS zone exposed!</div>
+          <pre class="pre-block">{{zoneResults()[0]['detail']}}</pre>
+        } @else {
+          <div class="alert alert-success">✓ Zone transfer refused (expected)</div>
+        }
+      </div>
+      <div class="card">
+        <div class="section-head"><span class="section-title">WHOIS</span></div>
+        <pre class="pre-block">{{whoisData()}}</pre>
+        <hr class="hr">
+        <div class="section-head"><span class="section-title">ASN / IP Ranges</span></div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;padding:4px">
+          @for (r of asnRanges(); track $index) {
+            <span style="font-family:var(--font-mono);font-size:11px;padding:3px 10px;border-radius:4px;background:var(--cyan-glow);border:1px solid rgba(0,191,255,.25);color:var(--cyan)">{{r['cidr']}}</span>
+          }
+        </div>
+      </div>
+    }
+
+    <!-- ── HTTP & PORTS ── -->
+    @if (activeTab() === 'http') {
+      <div class="card" style="margin-bottom:16px;padding:0;overflow:hidden">
+        <div style="padding:14px 16px;border-bottom:1px solid var(--border);font-family:var(--font-head);font-size:13px;font-weight:600">HTTP Services (httpx)</div>
+        <div class="filter-bar" style="border-radius:0;border:none;border-bottom:1px solid var(--border);margin-bottom:0">
+          <div class="filter-search"><span class="filter-icon">⌕</span><input [(ngModel)]="httpQ" placeholder="Filter URL or title…" /></div>
+          <select class="filter-select" [(ngModel)]="httpStatus">
+            <option value="all">All Status</option>
+            <option value="2xx">2xx OK</option>
+            <option value="3xx">3xx Redirect</option>
+            <option value="4xx">4xx Error</option>
+            <option value="5xx">5xx Error</option>
+          </select>
+          <span class="filter-count">{{filteredHttp().length}}</span>
+          <button class="btn btn-outline btn-sm" (click)="exportHttpUrls()">↓ Export URLs</button>
+        </div>
+        <div class="table-wrap"><table>
+          <thead><tr><th>URL</th><th>Status</th><th>Title</th><th>Technologies</th><th>Actions</th></tr></thead>
+          <tbody>
+            @for (h of filteredHttp().slice(0, 200); track $index) {
+              <tr>
+                <td class="td-url"><a [href]="h['url']" target="_blank">{{h['url']}}</a></td>
+                <td>@if (h['status']) { <span class="badge" [class]="statusBadge(h['status'])">{{h['status']}}</span> }</td>
+                <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px">{{h['title'] || '—'}}</td>
+                <td>
+                  <div style="display:flex;gap:3px">
+                    @for (t of (h['tech'] || []).slice(0, 3); track t) {
+                      <span class="tech-pill">{{t}}</span>
+                    }
+                  </div>
+                </td>
+                <td><button class="copy-btn" (click)="copyItem(h, 'url')">copy</button></td>
+              </tr>
+            }
+          </tbody>
+        </table></div>
+      </div>
+      <div class="card">
+        <div class="section-head"><span class="section-title">Open Ports (naabu)</span><span class="section-count">{{ports().length}}</span></div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;padding:4px 0">
+          @for (p of portSummary(); track p.port) {
+            <span [class]="portClass(p.port)" [title]="p.count + ' hosts'">:{{p.port}} <small>{{p.count}}</small></span>
+          }
+        </div>
+      </div>
+    }
+
+    <!-- ── VULNERABILITIES ── -->
+    @if (activeTab() === 'vulns') {
+      <div class="filter-bar">
+        <div class="filter-search"><span class="filter-icon">⌕</span><input [(ngModel)]="vulnQ" placeholder="Search template, name, host…" /></div>
+        <div style="display:flex;gap:6px">
+          @for (s of severities; track s) {
+            <button class="filter-pill" [class.active]="vulnSev === s" [class]="s" (click)="vulnSev = s">
+              {{s}} @if (sevCount(s)) { ({{sevCount(s)}}) }
+            </button>
+          }
+        </div>
+        <span class="filter-count">{{filteredVulns().length}}</span>
+      </div>
+      @if (filteredVulns().length === 0) {
+        <div class="card"><div class="empty-state" style="color:var(--accent)"><span style="font-size:36px">✓</span><p>No vulnerabilities</p></div></div>
+      } @else {
+        @for (v of filteredVulns().slice(0, 100); track $index) {
+          <div class="vuln-card" [class]="v['severity']">
+            <div class="vuln-head">
+              <span class="badge badge-{{v['severity']}}">{{v['severity']}}</span>
+              <span class="vuln-name">{{v['name']}}</span>
+            </div>
+            <div class="vuln-meta">
+              <span><span class="key">template: </span>{{v['template_id']}}</span>
+              <span><span class="key">matched: </span><a [href]="v['matched_at']" target="_blank">{{v['matched_at']}}</a></span>
+            </div>
+            @if (v['description']) {
+              <p style="margin-top:6px;font-size:12px;color:var(--text-dim)">{{v['description'] | slice:0:200}}</p>
+            }
+          </div>
+        }
+      }
+    }
+
+    <!-- ── URL DISCOVERY ── -->
+    @if (activeTab() === 'urls') {
+      <div class="stat-grid" style="margin-bottom:16px">
+        @for (src of urlSources(); track src.name) {
+          <div class="stat-card"><div class="stat-label">{{src.name}}</div><div class="stat-value">{{src.count}}</div></div>
+        }
+      </div>
+      <div class="filter-bar">
+        <div class="filter-search"><span class="filter-icon">⌕</span><input [(ngModel)]="urlQ" placeholder="Filter URLs…" /></div>
+        <select class="filter-select" [(ngModel)]="urlSrc">
+          <option value="all">All Sources</option>
+          @for (src of urlSources(); track src.name) {
+            <option [value]="src.name">{{src.name}}</option>
+          }
+        </select>
+        <span class="filter-count">{{filteredUrls().length}}</span>
+        <button class="btn btn-outline btn-sm" (click)="exportAllUrls()">↓ Export</button>
+      </div>
+      <div class="card" style="padding:0;overflow:hidden">
+        @for (u of filteredUrls().slice(urlPage * 200, (urlPage + 1) * 200); track $index) {
+          <div class="url-row">
+            <span class="badge badge-tool" style="font-size:9px;flex-shrink:0">{{u['source']}}</span>
+            <a class="url-text" [href]="u['url']" target="_blank">{{u['url']}}</a>
+            <button class="copy-btn" (click)="copyItem(u, 'url')">copy</button>
+          </div>
+        }
+        @if (filteredUrls().length > 200) {
+          <div class="pagination">
+            <button class="page-btn" (click)="urlPage = urlPage - 1" [disabled]="urlPage === 0">‹</button>
+            <span>{{urlPage + 1}} / {{filteredUrls().length / 200 | number:'1.0-0'}}</span>
+            <button class="page-btn" (click)="urlPage = urlPage + 1" [disabled]="(urlPage + 1) * 200 >= filteredUrls().length">›</button>
+          </div>
+        }
+      </div>
+    }
+
+    <!-- ── TECH STACK ── -->
+    @if (activeTab() === 'tech') {
+      @if (techInventory().length === 0) {
+        <div class="empty-state"><div class="empty-icon">⊛</div><p>No technology data</p></div>
+      } @else {
+        <div class="tech-inventory">
+          @for (t of techInventory(); track t.name) {
+            <div class="tech-card">
+              <div class="tech-name">{{t.name}}</div>
+              <div class="tech-count">{{t.count}} host{{t.count !== 1 ? 's' : ''}}</div>
+              <div class="tech-bar"><div class="tech-bar-fill" [style.width]="techBarWidth(t.count)"></div></div>
+            </div>
+          }
+        </div>
+      }
+    }
+
+    <!-- ── SCREENSHOTS ── -->
+    @if (activeTab() === 'screenshots') {
+      @if (screenshots().length === 0) {
+        <div class="empty-state"><div class="empty-icon">▦</div><p>No screenshots</p></div>
+      } @else {
+        <div class="screenshots-grid">
+          @for (s of screenshots(); track $index) {
+            <div class="ss-card" (click)="lightbox = s">
+              <div class="ss-img-wrap"><div class="ss-placeholder">▦</div><span class="ss-label">{{s['filename']}}</span></div>
+            </div>
+          }
+        </div>
+      }
+      @if (lightbox) {
+        <div class="lightbox-overlay" (click)="lightbox = null">
+          <div class="lightbox-box" (click)="$event.stopPropagation()">
+            <div class="lb-head">
+              <span>{{lightbox['filename']}}</span>
+              <button class="btn btn-ghost" (click)="lightbox = null">✕</button>
+            </div>
+          </div>
+        </div>
+      }
+    }
+  }
+</div>

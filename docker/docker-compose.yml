@@ -1,0 +1,35 @@
+services:
+  shadowgrid:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: shadow-grid:1.0.0
+    container_name: shadowgrid
+    ports:
+      - "8080:80"
+    volumes:
+      - shadowgrid-output:/app/output
+      - shadowgrid-data:/app/data
+    environment:
+      - AZURE_STORAGE_ENABLED=${AZURE_STORAGE_ENABLED:-false}
+      - AZURE_CONNECTION_STRING=${AZURE_CONNECTION_STRING:-}
+      - AZURE_ACCOUNT_NAME=${AZURE_ACCOUNT_NAME:-}
+      - AZURE_ACCOUNT_KEY=${AZURE_ACCOUNT_KEY:-}
+      - AZURE_TABLE_PREFIX=${AZURE_TABLE_PREFIX:-shadowgrid}
+      - OUTPUT_DIR=/app/output
+      - DATA_DIR=/app/data
+    cap_add:
+      - NET_RAW
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+volumes:
+  shadowgrid-output:
+    driver: local
+  shadowgrid-data:
+    driver: local
