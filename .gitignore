@@ -1,7 +1,0 @@
-output/
-__pycache__/
-*.pyc
-*.pyo
-.env
-resume.cfg
-*.log
