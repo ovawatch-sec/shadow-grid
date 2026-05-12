@@ -11,6 +11,7 @@ DOMAIN_RE = re.compile(r'\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63
 
 class CrtShTool(BaseTool):
     name = "crtsh"
+    binary_name = None
     category = ToolCategory.SUBDOMAIN
     description = "Certificate Transparency via crt.sh (no binary required)"
     parallel_group = "subdomain"

@@ -58,9 +58,9 @@
       <div class="filter-bar">
         <div class="filter-search">
           <span class="filter-icon">⌕</span>
-          <input [(ngModel)]="subQ" placeholder="Filter hostnames…" />
+          <input [ngModel]="subQ()" (ngModelChange)="setSubQ($event)" placeholder="Filter hostnames…" />
         </div>
-        <select class="filter-select" [(ngModel)]="subStatus">
+        <select class="filter-select" [ngModel]="subStatus()" (ngModelChange)="setSubStatus($event)">
           <option value="all">All Status</option>
           <option value="alive">Alive Only</option>
           <option value="dead">Dead Only</option>
@@ -103,9 +103,9 @@
         </div>
         @if (totalSubPages() > 1) {
           <div class="pagination">
-            <button class="page-btn" (click)="subPage = subPage - 1" [disabled]="subPage === 0">‹</button>
-            <span>{{subPage + 1}} / {{totalSubPages()}}</span>
-            <button class="page-btn" (click)="subPage = subPage + 1" [disabled]="subPage >= totalSubPages() - 1">›</button>
+            <button class="page-btn" (click)="subPage.set(subPage() - 1)" [disabled]="subPage() === 0">‹</button>
+            <span>{{subPage() + 1}} / {{totalSubPages()}}</span>
+            <button class="page-btn" (click)="subPage.set(subPage() + 1)" [disabled]="subPage() >= totalSubPages() - 1">›</button>
           </div>
         }
       </div>
@@ -159,8 +159,8 @@
       <div class="card" style="margin-bottom:16px;padding:0;overflow:hidden">
         <div style="padding:14px 16px;border-bottom:1px solid var(--border);font-family:var(--font-head);font-size:13px;font-weight:600">HTTP Services (httpx)</div>
         <div class="filter-bar" style="border-radius:0;border:none;border-bottom:1px solid var(--border);margin-bottom:0">
-          <div class="filter-search"><span class="filter-icon">⌕</span><input [(ngModel)]="httpQ" placeholder="Filter URL or title…" /></div>
-          <select class="filter-select" [(ngModel)]="httpStatus">
+          <div class="filter-search"><span class="filter-icon">⌕</span><input [ngModel]="httpQ()" (ngModelChange)="setHttpQ($event)" placeholder="Filter URL or title…" /></div>
+          <select class="filter-select" [ngModel]="httpStatus()" (ngModelChange)="setHttpStatus($event)">
             <option value="all">All Status</option>
             <option value="2xx">2xx OK</option>
             <option value="3xx">3xx Redirect</option>
@@ -204,10 +204,10 @@
     <!-- ── VULNERABILITIES ── -->
     @if (activeTab() === 'vulns') {
       <div class="filter-bar">
-        <div class="filter-search"><span class="filter-icon">⌕</span><input [(ngModel)]="vulnQ" placeholder="Search template, name, host…" /></div>
+        <div class="filter-search"><span class="filter-icon">⌕</span><input [ngModel]="vulnQ()" (ngModelChange)="setVulnQ($event)" placeholder="Search template, name, host…" /></div>
         <div style="display:flex;gap:6px">
           @for (s of severities; track s) {
-            <button class="filter-pill" [class.active]="vulnSev === s" [class]="s" (click)="vulnSev = s">
+            <button class="filter-pill" [ngClass]="[s, vulnSev() === s ? 'active' : '']" (click)="setVulnSev(s)">
               {{s}} @if (sevCount(s)) { ({{sevCount(s)}}) }
             </button>
           }
@@ -243,8 +243,8 @@
         }
       </div>
       <div class="filter-bar">
-        <div class="filter-search"><span class="filter-icon">⌕</span><input [(ngModel)]="urlQ" placeholder="Filter URLs…" /></div>
-        <select class="filter-select" [(ngModel)]="urlSrc">
+        <div class="filter-search"><span class="filter-icon">⌕</span><input [ngModel]="urlQ()" (ngModelChange)="setUrlQ($event)" placeholder="Filter URLs…" /></div>
+        <select class="filter-select" [ngModel]="urlSrc()" (ngModelChange)="setUrlSrc($event)">
           <option value="all">All Sources</option>
           @for (src of urlSources(); track src.name) {
             <option [value]="src.name">{{src.name}}</option>
@@ -254,7 +254,7 @@
         <button class="btn btn-outline btn-sm" (click)="exportAllUrls()">↓ Export</button>
       </div>
       <div class="card" style="padding:0;overflow:hidden">
-        @for (u of filteredUrls().slice(urlPage * 200, (urlPage + 1) * 200); track $index) {
+        @for (u of filteredUrls().slice(urlPage() * 200, (urlPage() + 1) * 200); track $index) {
           <div class="url-row">
             <span class="badge badge-tool" style="font-size:9px;flex-shrink:0">{{u['source']}}</span>
             <a class="url-text" [href]="u['url']" target="_blank">{{u['url']}}</a>
@@ -263,9 +263,9 @@
         }
         @if (filteredUrls().length > 200) {
           <div class="pagination">
-            <button class="page-btn" (click)="urlPage = urlPage - 1" [disabled]="urlPage === 0">‹</button>
-            <span>{{urlPage + 1}} / {{filteredUrls().length / 200 | number:'1.0-0'}}</span>
-            <button class="page-btn" (click)="urlPage = urlPage + 1" [disabled]="(urlPage + 1) * 200 >= filteredUrls().length">›</button>
+            <button class="page-btn" (click)="urlPage.set(urlPage() - 1)" [disabled]="urlPage() === 0">‹</button>
+            <span>{{urlPage() + 1}} / {{totalUrlPages()}}</span>
+            <button class="page-btn" (click)="urlPage.set(urlPage() + 1)" [disabled]="(urlPage() + 1) * 200 >= filteredUrls().length">›</button>
           </div>
         }
       </div>
@@ -296,7 +296,7 @@
         <div class="screenshots-grid">
           @for (s of screenshots(); track $index) {
             <div class="ss-card" (click)="lightbox = s">
-              <div class="ss-img-wrap"><div class="ss-placeholder">▦</div><span class="ss-label">{{s['filename']}}</span></div>
+              <div class="ss-img-wrap"><div class="ss-placeholder">▦</div><span class="ss-label"><img [src]="{{['filename']}}"/></span></div>
             </div>
           }
         </div>

@@ -9,6 +9,7 @@ RTYPES = ["A", "AAAA", "CNAME", "MX", "NS", "TXT", "SOA"]
 
 class DnsRecordsTool(BaseTool):
     name = "dns_records"
+    binary_name = "dig"
     category = ToolCategory.DNS
     description = "DNS record enumeration (A/AAAA/MX/TXT/NS/SOA/CNAME) via dig"
     parallel_group = "dns"

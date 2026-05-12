@@ -9,14 +9,17 @@ echo ""
 
 # Tool availability check
 echo "[ Tool availability ]"
-for t in assetfinder subfinder amass shuffledns dnsx httpx naabu nuclei \
-          gowitness whatweb waybackurls gau katana urlfinder asnmap whois dig; do
+for t in assetfinder subfinder amass shuffledns dnsx pd-httpx naabu nuclei \
+          gowitness whatweb waybackurls gau katana urlfinder asnmap massdns whois dig; do
     if command -v "$t" &>/dev/null; then
         echo "  ✓  $t"
     else
         echo "  ✗  $t (not installed — will be skipped)"
     fi
 done
+if command -v asnmap &>/dev/null && [ -z "${PDCP_API_KEY:-}" ]; then
+    echo "  !  asnmap installed but PDCP_API_KEY is empty — asnmap will be skipped unless configured in Settings"
+fi
 echo ""
 
 # Fetch nuclei templates in background (non-blocking, best-effort)

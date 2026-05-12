@@ -3,8 +3,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from typing import Any
+
 from models import ToolCategory
 from tools.base import BaseTool, RunResult
+
 
 class NucleiTool(BaseTool):
     name = "nuclei"
@@ -12,20 +14,34 @@ class NucleiTool(BaseTool):
     description = "Vulnerability scanning via nuclei templates (low–critical)"
     parallel_group = "vuln"
 
-    async def run(self, domain, out_dir, data_dir, wordlist, extra) -> RunResult:
+    async def run(self, domain: str, out_dir: Path, data_dir: Path,
+                  wordlist: str | None, extra: dict) -> RunResult:
         alive_file = out_dir / "alive_urls.txt"
         if not alive_file.exists():
-            return RunResult("", "No alive_urls.txt", 1, 0)
+            return RunResult("", "No alive_urls.txt", 0, 0)
+        if not alive_file.read_text(errors="replace").strip():
+            return RunResult("", "alive_urls.txt is empty — skipping nuclei", 0, 0)
+
         outfile = out_dir / "nuclei_results.jsonl"
-        return await self._exec([
+        result = await self._exec([
             "nuclei", "-list", str(alive_file),
             "-severity", "low,medium,high,critical",
-            "-json", "-o", str(outfile), "-silent",
+            "-jsonl", "-o", str(outfile), "-silent",
         ], timeout=3600)
+
+        # Older nuclei used -json instead of -jsonl.
+        if result.returncode != 0 and "unknown flag" in (result.stderr or "").lower():
+            result = await self._exec([
+                "nuclei", "-list", str(alive_file),
+                "-severity", "low,medium,high,critical",
+                "-json", "-o", str(outfile), "-silent",
+            ], timeout=3600)
+        return result
 
     def parse(self, result: RunResult, domain: str) -> list[dict[str, Any]]:
         rows = []
-        for line in result.lines:
+        lines = result.lines or self._read_lines(self.output_dir / domain / "nuclei_results.jsonl")
+        for line in lines:
             try:
                 f = json.loads(line)
                 rows.append({

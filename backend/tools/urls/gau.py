@@ -16,4 +16,5 @@ class GauTool(BaseTool):
         return await self._exec(["gau", "--subs", "--o", str(outfile), domain], timeout=300)
 
     def parse(self, result: RunResult, domain: str) -> list[dict[str, Any]]:
-        return [{"url": l, "source": "gau"} for l in result.lines if l.startswith("http")]
+        lines = result.lines or self._read_lines(self.output_dir / domain / "gau.txt")
+        return [{"url": l, "source": "gau"} for l in lines if l.startswith("http")]

@@ -18,6 +18,7 @@ services:
       - AZURE_TABLE_PREFIX=${AZURE_TABLE_PREFIX:-shadowgrid}
       - OUTPUT_DIR=/app/output
       - DATA_DIR=/app/data
+      - PDCP_API_KEY=${PDCP_API_KEY:-}
     cap_add:
       - NET_RAW
     restart: unless-stopped

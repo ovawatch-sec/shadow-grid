@@ -81,3 +81,9 @@ class DualStorage(BaseStorage):
 
     async def load_storage_config(self) -> dict:
         return await self._file.load_storage_config()
+
+    async def save_tool_api_keys(self, config: dict) -> None:
+        await self._both("save_tool_api_keys", config)
+
+    async def load_tool_api_keys(self) -> dict:
+        return await self._file.load_tool_api_keys()

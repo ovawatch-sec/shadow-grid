@@ -20,6 +20,6 @@ class SubfinderTool(BaseTool):
         return r
 
     def parse(self, result: RunResult, domain: str) -> list[dict[str, Any]]:
-        lines = result.lines or self._read_lines(Path(result.stdout) if result.stdout.endswith(".txt") else Path("/dev/null"))
-        return [{"host": l, "source": "subfinder"} for l in result.lines
+        lines = result.lines or self._read_lines(self.output_dir / domain / "subfinder.txt")
+        return [{"host": l, "source": "subfinder"} for l in lines
                 if l == domain or l.endswith("." + domain)]

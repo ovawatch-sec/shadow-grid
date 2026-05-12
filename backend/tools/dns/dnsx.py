@@ -24,7 +24,8 @@ class DnsxTool(BaseTool):
 
     def parse(self, result: RunResult, domain: str) -> list[dict[str, Any]]:
         rows = []
-        for line in result.lines:
+        lines = result.lines or self._read_lines(self.output_dir / domain / "dnsx.txt")
+        for line in lines:
             parts = line.split()
             if len(parts) >= 2:
                 rows.append({"host": parts[0], "record": " ".join(parts[1:]), "source": "dnsx"})

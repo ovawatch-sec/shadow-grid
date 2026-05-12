@@ -22,4 +22,5 @@ class KatanaTool(BaseTool):
         ], timeout=900)
 
     def parse(self, result: RunResult, domain: str) -> list[dict[str, Any]]:
-        return [{"url": l, "source": "katana"} for l in result.lines if l.startswith("http")]
+        lines = result.lines or self._read_lines(self.output_dir / domain / "katana.txt")
+        return [{"url": l, "source": "katana"} for l in lines if l.startswith("http")]

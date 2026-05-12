@@ -14,6 +14,7 @@ from fastapi.staticfiles import StaticFiles
 
 from config import settings
 from storage import DualStorage
+from tool_secrets import apply_tool_api_keys
 
 logging.basicConfig(
     level=logging.INFO,
@@ -42,6 +43,8 @@ async def lifespan(app: FastAPI):
             key=cfg.get("account_key", ""),
             prefix=cfg.get("table_prefix", "shadowgrid"),
         )
+
+    apply_tool_api_keys(await storage.load_tool_api_keys())
 
     logger.info("ShadowGrid backend started")
     yield

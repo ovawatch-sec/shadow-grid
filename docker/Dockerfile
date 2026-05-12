@@ -10,9 +10,10 @@ FROM node:20-alpine AS frontend-build
 
 WORKDIR /build/frontend
 COPY frontend/package.json ./
-RUN npm install 
+RUN npm install --no-audit --no-fund
 
 COPY frontend/ ./
+# Production build has Angular font inlining disabled; Docker builds must not depend on Google Fonts.
 RUN npm run build
 
 
@@ -24,6 +25,7 @@ FROM golang:1.26.3-bookworm AS go-builder
 # libpcap-dev: required at compile time for naabu CGO linkage
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpcap-dev \
+    build-essential \
     git \
     && rm -rf /var/lib/apt/lists/*
 
@@ -31,6 +33,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Each tool is its own RUN layer for clear failure attribution.
 # || true on optional tools means the build keeps going.
 RUN mkdir -p /staging
+
+# shuffledns is only a wrapper; it requires the massdns binary at runtime.
+RUN git clone --depth 1 https://github.com/blechschmidt/massdns.git /tmp/massdns \
+    && make -C /tmp/massdns \
+    && cp /tmp/massdns/bin/massdns /staging/
 
 # ── Subdomain enumeration ────────────────────────────────────────
 RUN go install github.com/tomnomnom/assetfinder@latest \
@@ -48,7 +55,7 @@ RUN go install github.com/projectdiscovery/dnsx/cmd/dnsx@latest \
 
 # ── HTTP & Ports ─────────────────────────────────────────────────
 RUN go install github.com/projectdiscovery/httpx/cmd/httpx@latest \
-    && cp /go/bin/httpx /staging/
+    && cp /go/bin/httpx /staging/pd-httpx
 
 RUN go install github.com/projectdiscovery/naabu/v2/cmd/naabu@latest \
     && cp /go/bin/naabu /staging/
@@ -103,6 +110,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-venv \
     nginx \
     whois \
+    netbase \
     dnsutils \
     curl \
     wget \
@@ -121,14 +129,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN gem install whatweb --no-document 2>&1 \
     || echo "WARN: whatweb gem install failed — tool will be skipped"
 
-# All Go binaries from staging
-COPY --from=go-builder /staging/ /usr/local/bin/
-RUN chmod +x /usr/local/bin/* 2>/dev/null || true
-
 # Python backend
 WORKDIR /app
 COPY backend/ ./backend/
 RUN pip3 install --no-cache-dir --break-system-packages -r backend/requirements.txt
+
+# All Go binaries from staging. Copy after pip install so Python console scripts
+# cannot overwrite ProjectDiscovery binaries such as httpx. The PD binary is
+# intentionally named pd-httpx to avoid the Python httpx CLI name collision.
+COPY --from=go-builder /staging/ /usr/local/bin/
+RUN chmod +x /usr/local/bin/* 2>/dev/null || true
 
 # Angular frontend — Angular 17 application builder outputs to dist/<name>/browser/
 COPY --from=frontend-build /build/frontend/dist/shadowgrid/ ./frontend/dist/shadowgrid/

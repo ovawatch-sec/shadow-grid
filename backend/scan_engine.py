@@ -1,37 +1,57 @@
 """
-scan_engine.py — Orchestrates tool execution for a scan.
+scan_engine.py — deterministic phase orchestration for ShadowGrid scans.
 
-Parallel execution strategy:
-  Phase 1 (ASSET):      whois, asnmap                   → parallel
-  Phase 2 (SUBDOMAIN):  crtsh, assetfinder, subfinder, amass, shuffledns → parallel
-  Phase 3 (DNS):        merge subdomains → dnsx, dns_records, zone_transfer → parallel
-  Phase 4 (HTTP):       produce alive files → httpx, naabu → parallel
-  Phase 5 (URLS):       produce alive_urls → waybackurls, gau, katana, urlfinder → parallel
-  Phase 6 (VULN+SS):    nuclei, gowitness, whatweb → parallel
-
-SSE events are broadcast via an asyncio.Queue per scan_id.
+Design goals:
+  - A phase is not allowed to start until the previous phase has fully drained.
+  - Every selected tool reaches a terminal state: done, error, or skipped.
+  - Phase hand-off artifacts are written before dependent phases start.
+  - Progress is emitted over SSE and persisted on the Scan object so reconnects
+    can replay recent state instead of leaving the frontend blind.
 """
 from __future__ import annotations
+
 import asyncio
-import json
+import fnmatch
 import logging
-import time
+import re
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Iterable
+from urllib.parse import urlparse
 
-from models import Scan, ScanStatus, ToolResult, ScanProgress
-from tools.registry import REGISTRY, get_tool
+from models import Scan, ScanProgress, ScanStatus, ToolCategory, ToolResult
 from storage import DualStorage
+from tools.registry import get_tool
+from tool_secrets import apply_tool_api_keys
 
 logger = logging.getLogger(__name__)
 
 # scan_id → asyncio.Queue of SSE event dicts
 _progress_queues: dict[str, asyncio.Queue] = {}
 
+PHASES: list[dict[str, object]] = [
+    {"index": 1, "name": "Asset Discovery", "tools": ["whois", "asnmap"]},
+    {"index": 2, "name": "Subdomain Enumeration", "tools": ["crtsh", "assetfinder", "subfinder", "amass", "shuffledns"]},
+    {"index": 3, "name": "DNS Resolution", "tools": ["dnsx", "dns_records", "zone_transfer"]},
+    {"index": 4, "name": "HTTP Probing & Port Scanning", "tools": ["httpx", "naabu"]},
+    {"index": 5, "name": "URL Discovery", "tools": ["waybackurls", "gau", "katana", "urlfinder"]},
+    {"index": 6, "name": "Vulnerability Scan, Screenshots & Tech", "tools": ["nuclei", "gowitness", "whatweb"]},
+]
+
+SUBDOMAIN_FILES = (
+    "crtsh.txt",
+    "assetfinder.txt",
+    "subfinder.txt",
+    "amass.txt",
+    "shuffledns.txt",
+)
+
+DOMAIN_RE = re.compile(r"\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}\b", re.I)
+
 
 def get_progress_queue(scan_id: str) -> asyncio.Queue:
     if scan_id not in _progress_queues:
-        _progress_queues[scan_id] = asyncio.Queue(maxsize=500)
+        _progress_queues[scan_id] = asyncio.Queue(maxsize=1000)
     return _progress_queues[scan_id]
 
 
@@ -39,15 +59,256 @@ def drop_progress_queue(scan_id: str) -> None:
     _progress_queues.pop(scan_id, None)
 
 
-async def _emit(scan_id: str, tool: str, status: str, message: str = "", count: int = 0) -> None:
-    q = get_progress_queue(scan_id)
-    event = {"tool": tool, "status": status, "message": message, "count": count,
-             "ts": datetime.now(timezone.utc).isoformat()}
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _selected_tools(scan: Scan, phase: dict[str, object]) -> list[str]:
+    requested = set(scan.tools or [])
+    return [t for t in phase["tools"] if t in requested]  # type: ignore[index]
+
+
+async def _emit(
+    scan: Scan,
+    storage: DualStorage,
+    tool: str,
+    status: str,
+    message: str = "",
+    count: int = 0,
+    *,
+    domain: str = "",
+    phase: str = "",
+    phase_index: int = 0,
+    phase_total: int = len(PHASES),
+    completed_tools: int = 0,
+    total_tools: int = 0,
+    overall_completed_tools: int = 0,
+    overall_total_tools: int = 0,
+    persist: bool = True,
+) -> None:
+    """Emit one progress event to SSE and persist it on the Scan record."""
+    event = {
+        "tool": tool,
+        "status": status,
+        "message": message,
+        "count": count,
+        "ts": _now_iso(),
+        "domain": domain,
+        "phase": phase,
+        "phase_index": phase_index,
+        "phase_total": phase_total,
+        "completed_tools": completed_tools,
+        "total_tools": total_tools,
+        "overall_completed_tools": overall_completed_tools,
+        "overall_total_tools": overall_total_tools,
+    }
+
+    q = get_progress_queue(scan.id)
     try:
         q.put_nowait(event)
     except asyncio.QueueFull:
-        pass
-    logger.info(f"[{scan_id}] {tool}: {status} — {message}")
+        # Drop the oldest event and keep the newest state flowing.
+        try:
+            _ = q.get_nowait()
+            q.put_nowait(event)
+        except Exception:
+            pass
+
+    if persist:
+        try:
+            scan.progress.append(ScanProgress(**event))
+            # Keep JSON scan metadata bounded for long multi-domain scans.
+            if len(scan.progress) > 1000:
+                scan.progress = scan.progress[-1000:]
+            await storage.save_scan(scan)
+        except Exception:
+            logger.exception("Could not persist progress event")
+
+    logger.info("[%s] %s: %s — %s", scan.id, tool, status, message)
+
+
+async def _scan_cancelled(scan: Scan, storage: DualStorage) -> bool:
+    latest = await storage.get_scan(scan.id)
+    return bool(latest and latest.status == ScanStatus.CANCELLED)
+
+
+def _extract_host(value: str) -> str:
+    value = (value or "").strip().lower().lstrip("*.")
+    if not value:
+        return ""
+
+    if "://" in value:
+        parsed = urlparse(value)
+        value = parsed.hostname or ""
+    else:
+        # Strip path/query and then a possible :port suffix.
+        value = value.split("/", 1)[0].split("?", 1)[0]
+        if value.count(":") == 1:
+            value = value.rsplit(":", 1)[0]
+
+    return value.strip().strip(".")
+
+
+def _host_in_domain(host: str, root_domain: str) -> bool:
+    host = _extract_host(host)
+    root_domain = _extract_host(root_domain)
+    return bool(host and (host == root_domain or host.endswith(f".{root_domain}")))
+
+
+def _matches_oos(host_or_url: str, oos: Iterable[str]) -> bool:
+    host = _extract_host(host_or_url)
+    if not host:
+        return False
+
+    for raw_pattern in oos:
+        pattern = _extract_host(raw_pattern)
+        if not pattern:
+            continue
+
+        # Preserve wildcard semantics when the original pattern uses them.
+        wildcard_pattern = raw_pattern.strip().lower()
+        if fnmatch.fnmatch(host, wildcard_pattern):
+            return True
+
+        if wildcard_pattern.startswith("*.") and host.endswith(wildcard_pattern[1:]):
+            return True
+
+        if host == pattern or host.endswith(f".{pattern}"):
+            return True
+
+    return False
+
+
+def _unique_sorted_hosts(hosts: Iterable[str], root_domain: str, oos: list[str]) -> list[str]:
+    clean: set[str] = set()
+    for host in hosts:
+        h = _extract_host(host)
+        if _host_in_domain(h, root_domain) and not _matches_oos(h, oos):
+            clean.add(h)
+    return sorted(clean)
+
+
+def _hosts_from_results(results: Iterable[ToolResult | None]) -> list[str]:
+    hosts: list[str] = []
+    for result in results:
+        if not result:
+            continue
+        for row in result.data or []:
+            value = row.get("host") or row.get("domain") or row.get("url") or ""
+            if value:
+                hosts.append(str(value))
+    return hosts
+
+
+def _hosts_from_files(domain_dir: Path) -> list[str]:
+    hosts: list[str] = []
+    for filename in SUBDOMAIN_FILES:
+        path = domain_dir / filename
+        if not path.exists():
+            continue
+        try:
+            for line in path.read_text(errors="replace").splitlines():
+                hosts.extend(DOMAIN_RE.findall(line))
+        except Exception:
+            logger.warning("Could not read subdomain artifact: %s", path)
+    return hosts
+
+
+def _write_lines(path: Path, lines: Iterable[str]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    content = "\n".join(lines)
+    if content:
+        content += "\n"
+    path.write_text(content)
+
+
+def _write_merged_subdomains(domain: str, results: list[ToolResult | None], output_dir: Path, oos: list[str]) -> tuple[Path, int]:
+    """Merge all subdomain sources into a canonical unique hand-off file."""
+    domain_dir = output_dir / domain
+    hosts = _hosts_from_results(results)
+    hosts.extend(_hosts_from_files(domain_dir))
+    merged = _unique_sorted_hosts(hosts, domain, oos)
+
+    merged_path = domain_dir / "subdomains_merged.txt"
+    canonical_path = domain_dir / "subdomains.txt"
+    _write_lines(merged_path, merged)
+    _write_lines(canonical_path, merged)
+    return merged_path, len(merged)
+
+
+def _write_alive_subdomains(domain: str, dns_results: list[ToolResult | None], output_dir: Path, oos: list[str]) -> tuple[Path, int]:
+    """
+    Write alive_subdomains.txt before HTTP tools run.
+
+    Prefer dnsx-resolved hosts. If dnsx was not selected/available, fall back to
+    merged subdomains so httpx can still probe and resolve on its own.
+    """
+    domain_dir = output_dir / domain
+    dns_hosts = _hosts_from_results([r for r in dns_results if r and r.tool == "dnsx"])
+    hosts = _unique_sorted_hosts(dns_hosts, domain, oos)
+
+    if not hosts:
+        merged = domain_dir / "subdomains_merged.txt"
+        if merged.exists():
+            hosts = _unique_sorted_hosts(merged.read_text(errors="replace").splitlines(), domain, oos)
+
+    out = domain_dir / "alive_subdomains.txt"
+    _write_lines(out, hosts)
+    return out, len(hosts)
+
+
+def _url_from_port(host: str, port: int) -> str | None:
+    if port in {80}:
+        return f"http://{host}"
+    if port in {443}:
+        return f"https://{host}"
+    if port in {8080, 8000, 8008, 8888, 5000, 3000}:
+        return f"http://{host}:{port}"
+    if port in {8443, 9443}:
+        return f"https://{host}:{port}"
+    return None
+
+
+def _write_alive_urls(domain: str, http_results: list[ToolResult | None], output_dir: Path, oos: list[str]) -> tuple[Path, int]:
+    """Write canonical alive_urls.txt for URL discovery, nuclei and gowitness.
+
+    Primary source is httpx JSON output. If httpx fails or returns no rows, we
+    still build useful candidates from naabu web ports. As a last-resort fallback
+    we emit https/http candidates from alive_subdomains.txt so screenshot/crawl
+    tools have something to try instead of silently producing zero results.
+    """
+    urls: set[str] = set()
+    domain_dir = output_dir / domain
+
+    for result in http_results:
+        if not result:
+            continue
+        for row in result.data or []:
+            url = str(row.get("url") or "").strip()
+            if url and not _matches_oos(url, oos):
+                urls.add(url)
+                continue
+
+            if result.tool == "naabu":
+                host = _extract_host(str(row.get("host") or ""))
+                try:
+                    port = int(row.get("port") or 0)
+                except Exception:
+                    port = 0
+                candidate = _url_from_port(host, port) if host and port else None
+                if candidate and not _matches_oos(candidate, oos):
+                    urls.add(candidate)
+
+    if not urls:
+        alive_subdomains = domain_dir / "alive_subdomains.txt"
+        if alive_subdomains.exists():
+            for host in _unique_sorted_hosts(alive_subdomains.read_text(errors="replace").splitlines(), domain, oos):
+                urls.add(f"https://{host}")
+                urls.add(f"http://{host}")
+
+    out = domain_dir / "alive_urls.txt"
+    _write_lines(out, sorted(urls))
+    return out, len(urls)
 
 
 async def _run_tool(
@@ -59,72 +320,147 @@ async def _run_tool(
     data_dir: Path,
     storage: DualStorage,
     wordlist: str | None,
+    *,
+    phase: str,
+    phase_index: int,
+    completed_tools_ref: dict[str, int],
+    total_tools: int,
+    overall_completed_tools_ref: dict[str, int],
+    overall_total_tools: int,
 ) -> ToolResult | None:
-    if tool_name not in scan.tools:
-        return None
-
     tool = get_tool(tool_name, output_dir, data_dir)
     if tool is None:
-        await _emit(scan.id, tool_name, "skipped", "Not in registry")
-        return None
-    if not tool.is_available():
-        await _emit(scan.id, tool_name, "skipped", f"{tool_name} not installed")
+        completed_tools_ref["value"] += 1
+        overall_completed_tools_ref["value"] += 1
+        await _emit(
+            scan, storage, tool_name, "skipped", "Not registered", domain=domain,
+            phase=phase, phase_index=phase_index,
+            completed_tools=completed_tools_ref["value"], total_tools=total_tools,
+            overall_completed_tools=overall_completed_tools_ref["value"],
+            overall_total_tools=overall_total_tools,
+        )
         return None
 
-    await _emit(scan.id, tool_name, "running")
+    availability_error = tool.availability_error()
+    if availability_error:
+        completed_tools_ref["value"] += 1
+        overall_completed_tools_ref["value"] += 1
+        await _emit(
+            scan, storage, tool_name, "skipped", availability_error,
+            domain=domain, phase=phase, phase_index=phase_index,
+            completed_tools=completed_tools_ref["value"], total_tools=total_tools,
+            overall_completed_tools=overall_completed_tools_ref["value"],
+            overall_total_tools=overall_total_tools,
+        )
+        return None
+
+    await _emit(
+        scan, storage, tool_name, "running", domain=domain, phase=phase,
+        phase_index=phase_index, completed_tools=completed_tools_ref["value"], total_tools=total_tools,
+        overall_completed_tools=overall_completed_tools_ref["value"],
+        overall_total_tools=overall_total_tools,
+    )
+
     try:
         result = await tool.execute(domain, scan.id, scan.project_id, oos, wordlist)
         await storage.save_result(result)
-        await _emit(scan.id, tool_name, "done",
-                    result.error or f"{result.count} results", result.count)
+        completed_tools_ref["value"] += 1
+        overall_completed_tools_ref["value"] += 1
+
+        if result.error:
+            await _emit(
+                scan, storage, tool_name, "error", result.error[:500], result.count,
+                domain=domain, phase=phase, phase_index=phase_index,
+                completed_tools=completed_tools_ref["value"], total_tools=total_tools,
+                overall_completed_tools=overall_completed_tools_ref["value"],
+                overall_total_tools=overall_total_tools,
+            )
+        else:
+            await _emit(
+                scan, storage, tool_name, "done", f"{result.count} results", result.count,
+                domain=domain, phase=phase, phase_index=phase_index,
+                completed_tools=completed_tools_ref["value"], total_tools=total_tools,
+                overall_completed_tools=overall_completed_tools_ref["value"],
+                overall_total_tools=overall_total_tools,
+            )
         return result
+
     except Exception as exc:
-        logger.exception(f"{tool_name} raised exception")
-        await _emit(scan.id, tool_name, "error", str(exc))
-        return None
+        logger.exception("%s raised exception", tool_name)
+        completed_tools_ref["value"] += 1
+        overall_completed_tools_ref["value"] += 1
+        result = ToolResult(
+            scan_id=scan.id,
+            project_id=scan.project_id,
+            tool=tool_name,
+            category=getattr(tool, "category", ToolCategory.SUBDOMAIN),
+            domain=domain,
+            data=[],
+            count=0,
+            error=str(exc),
+        )
+        await storage.save_result(result)
+        await _emit(
+            scan, storage, tool_name, "error", str(exc)[:500], domain=domain,
+            phase=phase, phase_index=phase_index,
+            completed_tools=completed_tools_ref["value"], total_tools=total_tools,
+            overall_completed_tools=overall_completed_tools_ref["value"],
+            overall_total_tools=overall_total_tools,
+        )
+        return result
 
 
-def _write_merged_subdomains(domain: str, results: list[ToolResult | None], output_dir: Path) -> Path:
-    """Merge all subdomain results into a single file for downstream tools."""
-    merged = set()
-    for r in results:
-        if r and r.data:
-            for row in r.data:
-                h = row.get("host", "")
-                if h:
-                    merged.add(h)
+async def _run_phase(
+    phase: dict[str, object],
+    domain: str,
+    scan: Scan,
+    oos: list[str],
+    output_dir: Path,
+    data_dir: Path,
+    storage: DualStorage,
+    overall_completed_tools_ref: dict[str, int],
+    overall_total_tools: int,
+) -> list[ToolResult | None]:
+    index = int(phase["index"])
+    name = str(phase["name"])
+    tools = _selected_tools(scan, phase)
+    label = f"Phase {index}: {name}"
 
-    out = output_dir / domain / "subdomains_merged.txt"
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text("\n".join(sorted(merged)))
-    return out
+    if not tools:
+        await _emit(
+            scan, storage, "__phase__", "skipped", f"{label} — no selected tools",
+            domain=domain, phase=name, phase_index=index, completed_tools=0, total_tools=0,
+            overall_completed_tools=overall_completed_tools_ref["value"],
+            overall_total_tools=overall_total_tools,
+        )
+        return []
 
+    await _emit(
+        scan, storage, "__phase__", "running", label, domain=domain,
+        phase=name, phase_index=index, completed_tools=0, total_tools=len(tools),
+        overall_completed_tools=overall_completed_tools_ref["value"],
+        overall_total_tools=overall_total_tools,
+    )
 
-def _write_alive_files(domain: str, dns_results: list[ToolResult | None],
-                       http_results: list[ToolResult | None], output_dir: Path) -> None:
-    """Write alive_subdomains.txt and alive_urls.txt for downstream tools."""
-    alive_hosts = set()
-    for r in dns_results:
-        if r and r.data:
-            for row in r.data:
-                h = row.get("host", "")
-                if h:
-                    alive_hosts.add(h.split()[0])  # strip record data
+    completed_ref = {"value": 0}
+    results = await asyncio.gather(*[
+        _run_tool(
+            tool_name, domain, scan, oos, output_dir, data_dir, storage, scan.wordlist,
+            phase=name, phase_index=index, completed_tools_ref=completed_ref, total_tools=len(tools),
+            overall_completed_tools_ref=overall_completed_tools_ref,
+            overall_total_tools=overall_total_tools,
+        )
+        for tool_name in tools
+    ])
 
-    out_subs = output_dir / domain / "alive_subdomains.txt"
-    out_subs.write_text("\n".join(sorted(alive_hosts)))
-
-    # Build alive_urls from httpx results
-    alive_urls = set()
-    for r in http_results:
-        if r and r.data:
-            for row in r.data:
-                u = row.get("url", "")
-                if u:
-                    alive_urls.add(u)
-
-    out_urls = output_dir / domain / "alive_urls.txt"
-    out_urls.write_text("\n".join(sorted(alive_urls)))
+    await _emit(
+        scan, storage, "__phase__", "done", f"{label} complete",
+        domain=domain, phase=name, phase_index=index,
+        completed_tools=len(tools), total_tools=len(tools),
+        overall_completed_tools=overall_completed_tools_ref["value"],
+        overall_total_tools=overall_total_tools,
+    )
+    return list(results)
 
 
 async def run_scan(
@@ -135,75 +471,87 @@ async def run_scan(
     data_dir: Path,
     storage: DualStorage,
 ) -> None:
-    """Main scan coroutine — called as a background task."""
+    """Main scan coroutine — called by the API background task or CLI."""
+    apply_tool_api_keys(await storage.load_tool_api_keys())
+
     scan.status = ScanStatus.RUNNING
     scan.started_at = datetime.now(timezone.utc)
+    scan.completed_at = None
+    scan.error = ""
     await storage.save_scan(scan)
+
+    overall_total_tools = sum(len(_selected_tools(scan, phase)) for phase in PHASES) * len(domains)
+    overall_completed_ref = {"value": 0}
 
     try:
         for domain in domains:
-            await _emit(scan.id, "__domain__", "start", domain)
+            if await _scan_cancelled(scan, storage):
+                scan.status = ScanStatus.CANCELLED
+                break
 
-            wl = scan.wordlist
-
-            # ── Phase 1: Asset ──────────────────────────────────────
-            await _emit(scan.id, "__phase__", "running", "Phase 1: Asset Discovery")
-            phase1 = await asyncio.gather(
-                _run_tool("whois",  domain, scan, oos, output_dir, data_dir, storage, wl),
-                _run_tool("asnmap", domain, scan, oos, output_dir, data_dir, storage, wl),
+            await _emit(
+                scan, storage, "__domain__", "start", domain, domain=domain,
+                overall_completed_tools=overall_completed_ref["value"],
+                overall_total_tools=overall_total_tools,
             )
 
-            # ── Phase 2: Subdomain Enum (all parallel) ─────────────
-            await _emit(scan.id, "__phase__", "running", "Phase 2: Subdomain Enumeration")
-            phase2 = await asyncio.gather(
-                _run_tool("crtsh",       domain, scan, oos, output_dir, data_dir, storage, wl),
-                _run_tool("assetfinder", domain, scan, oos, output_dir, data_dir, storage, wl),
-                _run_tool("subfinder",   domain, scan, oos, output_dir, data_dir, storage, wl),
-                _run_tool("amass",       domain, scan, oos, output_dir, data_dir, storage, wl),
-                _run_tool("shuffledns",  domain, scan, oos, output_dir, data_dir, storage, wl),
+            phase_results: dict[int, list[ToolResult | None]] = {}
+            for phase in PHASES:
+                if await _scan_cancelled(scan, storage):
+                    scan.status = ScanStatus.CANCELLED
+                    await _emit(scan, storage, "__scan__", "cancelled", "Scan cancelled", domain=domain)
+                    break
+
+                idx = int(phase["index"])
+
+                # Hard gates: write dependent artifacts before the phase that needs them.
+                if idx == 3:
+                    merged_path, merged_count = _write_merged_subdomains(domain, phase_results.get(2, []), output_dir, oos)
+                    await _emit(
+                        scan, storage, "subdomain-merge", "done",
+                        f"Wrote {merged_path.name}", merged_count,
+                        domain=domain, phase="Subdomain Enumeration", phase_index=2,
+                        overall_completed_tools=overall_completed_ref["value"],
+                        overall_total_tools=overall_total_tools,
+                    )
+                elif idx == 4:
+                    alive_path, alive_count = _write_alive_subdomains(domain, phase_results.get(3, []), output_dir, oos)
+                    await _emit(
+                        scan, storage, "alive-subdomains", "done",
+                        f"Wrote {alive_path.name}", alive_count,
+                        domain=domain, phase="DNS Resolution", phase_index=3,
+                        overall_completed_tools=overall_completed_ref["value"],
+                        overall_total_tools=overall_total_tools,
+                    )
+
+                phase_results[idx] = await _run_phase(
+                    phase, domain, scan, oos, output_dir, data_dir, storage,
+                    overall_completed_tools_ref=overall_completed_ref,
+                    overall_total_tools=overall_total_tools,
+                )
+
+                if idx == 4:
+                    urls_path, urls_count = _write_alive_urls(domain, phase_results.get(4, []), output_dir, oos)
+                    await _emit(
+                        scan, storage, "alive-urls", "done",
+                        f"Wrote {urls_path.name}", urls_count,
+                        domain=domain, phase="HTTP Probing & Port Scanning", phase_index=4,
+                        overall_completed_tools=overall_completed_ref["value"],
+                        overall_total_tools=overall_total_tools,
+                    )
+
+            if scan.status == ScanStatus.CANCELLED:
+                break
+
+            await _emit(
+                scan, storage, "__domain__", "done", domain, domain=domain,
+                overall_completed_tools=overall_completed_ref["value"],
+                overall_total_tools=overall_total_tools,
             )
-            _write_merged_subdomains(domain, list(phase2), output_dir)
 
-            # ── Phase 3: DNS Resolution ─────────────────────────────
-            await _emit(scan.id, "__phase__", "running", "Phase 3: DNS Resolution")
-            phase3 = await asyncio.gather(
-                _run_tool("dnsx",         domain, scan, oos, output_dir, data_dir, storage, wl),
-                _run_tool("dns_records",  domain, scan, oos, output_dir, data_dir, storage, wl),
-                _run_tool("zone_transfer",domain, scan, oos, output_dir, data_dir, storage, wl),
-            )
+        if scan.status != ScanStatus.CANCELLED:
+            scan.status = ScanStatus.COMPLETED
 
-            # ── Phase 4: HTTP Probing ───────────────────────────────
-            # First write alive_subdomains.txt (needed by httpx/naabu)
-            _write_alive_files(domain, list(phase3), [], output_dir)
-            await _emit(scan.id, "__phase__", "running", "Phase 4: HTTP Probing & Port Scanning")
-            phase4 = await asyncio.gather(
-                _run_tool("httpx", domain, scan, oos, output_dir, data_dir, storage, wl),
-                _run_tool("naabu", domain, scan, oos, output_dir, data_dir, storage, wl),
-            )
-
-            # Update alive_urls.txt from httpx results
-            _write_alive_files(domain, list(phase3), list(phase4), output_dir)
-
-            # ── Phase 5: URL Discovery (all parallel) ───────────────
-            await _emit(scan.id, "__phase__", "running", "Phase 5: URL Discovery")
-            phase5 = await asyncio.gather(
-                _run_tool("waybackurls", domain, scan, oos, output_dir, data_dir, storage, wl),
-                _run_tool("gau",         domain, scan, oos, output_dir, data_dir, storage, wl),
-                _run_tool("katana",      domain, scan, oos, output_dir, data_dir, storage, wl),
-                _run_tool("urlfinder",   domain, scan, oos, output_dir, data_dir, storage, wl),
-            )
-
-            # ── Phase 6: Vuln + Screenshots (all parallel) ──────────
-            await _emit(scan.id, "__phase__", "running", "Phase 6: Vuln Scan & Screenshots")
-            await asyncio.gather(
-                _run_tool("nuclei",    domain, scan, oos, output_dir, data_dir, storage, wl),
-                _run_tool("gowitness", domain, scan, oos, output_dir, data_dir, storage, wl),
-                _run_tool("whatweb",   domain, scan, oos, output_dir, data_dir, storage, wl),
-            )
-
-            await _emit(scan.id, "__domain__", "done", domain)
-
-        scan.status = ScanStatus.COMPLETED
     except Exception as exc:
         logger.exception("Scan failed")
         scan.status = ScanStatus.FAILED
@@ -211,8 +559,12 @@ async def run_scan(
 
     scan.completed_at = datetime.now(timezone.utc)
     await storage.save_scan(scan)
-    await _emit(scan.id, "__scan__", "done", scan.status.value)
+    await _emit(
+        scan, storage, "__scan__", scan.status.value, scan.status.value,
+        overall_completed_tools=overall_completed_ref["value"],
+        overall_total_tools=overall_total_tools,
+    )
 
-    # Leave queue open for 60s so the frontend drains it, then clean up
+    # Leave queue open briefly so the frontend can drain final events.
     await asyncio.sleep(60)
     drop_progress_queue(scan.id)
