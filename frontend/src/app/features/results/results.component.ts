@@ -4,8 +4,7 @@ import { ActivatedRoute, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../core/services/api.service';
 import { ToolResult } from '../../core/models';
-
-declare const Chart: any;
+import Chart from 'chart.js/auto';
 
 type TabId = 'overview'|'subdomains'|'dns'|'http'|'vulns'|'urls'|'tech'|'screenshots';
 
@@ -22,10 +21,16 @@ export class ResultsComponent implements OnInit, AfterViewInit {
   loading = signal(true);
   activeTab = signal<TabId>('overview');
   lightbox: any = null;
-  subQ = ''; subStatus = 'all'; subPage = 0;
-  httpQ = ''; httpStatus = 'all';
-  vulnQ = ''; vulnSev = 'all';
-  urlQ = ''; urlSrc = 'all'; urlPage = 0;
+  subQ = signal('');
+  subStatus = signal('all');
+  subPage = signal(0);
+  httpQ = signal('');
+  httpStatus = signal('all');
+  vulnQ = signal('');
+  vulnSev = signal('all');
+  urlQ = signal('');
+  urlSrc = signal('all');
+  urlPage = signal(0);
 
   tabs = [
     {id:'overview' as TabId, label:'Overview'},
@@ -104,44 +109,74 @@ export class ResultsComponent implements OnInit, AfterViewInit {
   topVulns  = computed(() => [...this.vulns()].sort((a: any,b: any) => this.sevRank(a)-this.sevRank(b)).slice(0,5));
 
   filteredSubs = computed(() => {
-    let s = this.subdomains();
-    if (this.subQ) s = s.filter((x: any) => x['host']?.toLowerCase().includes(this.subQ.toLowerCase()));
-    if (this.subStatus === 'alive') s = s.filter((x: any) => x['alive']);
-    if (this.subStatus === 'dead')  s = s.filter((x: any) => !x['alive']);
-    return s;
+    let rows = this.subdomains();
+    const q = this.subQ().trim().toLowerCase();
+    const status = this.subStatus();
+
+    if (q) rows = rows.filter((x: any) => (x['host'] || '').toLowerCase().includes(q));
+    if (status === 'alive') rows = rows.filter((x: any) => x['alive']);
+    if (status === 'dead') rows = rows.filter((x: any) => !x['alive']);
+
+    return rows;
   });
-  pagedSubs       = computed(() => this.filteredSubs().slice(this.subPage*100,(this.subPage+1)*100));
-  totalSubPages   = computed(() => Math.ceil(this.filteredSubs().length / 100));
+  pagedSubs = computed(() => {
+    const page = this.subPage();
+    return this.filteredSubs().slice(page * 100, (page + 1) * 100);
+  });
+  totalSubPages = computed(() => Math.ceil(this.filteredSubs().length / 100));
 
   filteredHttp = computed(() => {
-    let h = this.httpResults();
-    if (this.httpQ) h = h.filter((x: any) => (x['url']||'').toLowerCase().includes(this.httpQ.toLowerCase()) || (x['title']||'').toLowerCase().includes(this.httpQ.toLowerCase()));
-    if (this.httpStatus !== 'all') h = h.filter((x: any) => {
-      const sc = x['status'];
-      if (this.httpStatus==='2xx') return sc>=200&&sc<300;
-      if (this.httpStatus==='3xx') return sc>=300&&sc<400;
-      if (this.httpStatus==='4xx') return sc>=400&&sc<500;
-      if (this.httpStatus==='5xx') return sc>=500;
-      return true;
-    });
-    return h;
+    let rows = this.httpResults();
+    const q = this.httpQ().trim().toLowerCase();
+    const status = this.httpStatus();
+
+    if (q) {
+      rows = rows.filter((x: any) =>
+        (x['url'] || '').toLowerCase().includes(q) ||
+        (x['title'] || '').toLowerCase().includes(q) ||
+        (x['host'] || '').toLowerCase().includes(q));
+    }
+
+    if (status !== 'all') {
+      rows = rows.filter((x: any) => {
+        const sc = Number(x['status']);
+        if (status === '2xx') return sc >= 200 && sc < 300;
+        if (status === '3xx') return sc >= 300 && sc < 400;
+        if (status === '4xx') return sc >= 400 && sc < 500;
+        if (status === '5xx') return sc >= 500;
+        return true;
+      });
+    }
+
+    return rows;
   });
 
   filteredVulns = computed(() => {
-    let v = this.vulns();
-    if (this.vulnSev !== 'all') v = v.filter((x: any) => x['severity'] === this.vulnSev);
-    if (this.vulnQ) v = v.filter((x: any) =>
-      (x['name']||'').toLowerCase().includes(this.vulnQ.toLowerCase()) ||
-      (x['template_id']||'').toLowerCase().includes(this.vulnQ.toLowerCase()) ||
-      (x['matched_at']||'').toLowerCase().includes(this.vulnQ.toLowerCase()));
-    return [...v].sort((a: any,b: any) => this.sevRank(a)-this.sevRank(b));
+    let rows = this.vulns();
+    const sev = this.vulnSev();
+    const q = this.vulnQ().trim().toLowerCase();
+
+    if (sev !== 'all') rows = rows.filter((x: any) => (x['severity'] || '').toLowerCase() === sev);
+    if (q) {
+      rows = rows.filter((x: any) =>
+        (x['name'] || '').toLowerCase().includes(q) ||
+        (x['template_id'] || '').toLowerCase().includes(q) ||
+        (x['matched_at'] || '').toLowerCase().includes(q) ||
+        (x['host'] || '').toLowerCase().includes(q));
+    }
+
+    return [...rows].sort((a: any, b: any) => this.sevRank(a) - this.sevRank(b));
   });
 
   filteredUrls = computed(() => {
-    let u = this.urls();
-    if (this.urlSrc !== 'all') u = u.filter((x: any) => x['source'] === this.urlSrc);
-    if (this.urlQ) u = u.filter((x: any) => x['url']?.toLowerCase().includes(this.urlQ.toLowerCase()));
-    return u;
+    let rows = this.urls();
+    const source = this.urlSrc();
+    const q = this.urlQ().trim().toLowerCase();
+
+    if (source !== 'all') rows = rows.filter((x: any) => x['source'] === source);
+    if (q) rows = rows.filter((x: any) => (x['url'] || '').toLowerCase().includes(q));
+
+    return rows;
   });
 
   urlSources = computed(() => {
@@ -155,6 +190,18 @@ export class ResultsComponent implements OnInit, AfterViewInit {
     this.ports().forEach((p: any) => m.set(p['port'],(m.get(p['port'])||0)+1));
     return [...m.entries()].map(([port,count])=>({port,count})).sort((a,b)=>b.count-a.count);
   });
+
+
+  // ── Filter setters: reset pagination whenever a filter changes ─────────
+  setSubQ(value: string) { this.subQ.set(value); this.subPage.set(0); }
+  setSubStatus(value: string) { this.subStatus.set(value); this.subPage.set(0); }
+  setHttpQ(value: string) { this.httpQ.set(value); }
+  setHttpStatus(value: string) { this.httpStatus.set(value); }
+  setVulnQ(value: string) { this.vulnQ.set(value); }
+  setVulnSev(value: string) { this.vulnSev.set(value); }
+  setUrlQ(value: string) { this.urlQ.set(value); this.urlPage.set(0); }
+  setUrlSrc(value: string) { this.urlSrc.set(value); this.urlPage.set(0); }
+  totalUrlPages(): number { return Math.ceil(this.filteredUrls().length / 200); }
 
   // ── Helper methods ──────────────────────────────────────────────
   sevRank(f: any): number {
@@ -204,7 +251,6 @@ export class ResultsComponent implements OnInit, AfterViewInit {
   techBarWidth(count: number): string { return ((count / this.maxTech()) * 100) + '%'; }
 
   initCharts() {
-    if (typeof Chart === 'undefined') return;
     const sevCanvas  = document.getElementById('chart-sev')  as HTMLCanvasElement;
     const toolCanvas = document.getElementById('chart-tools') as HTMLCanvasElement;
     if (sevCanvas && !(sevCanvas as any)._chartInstance) {

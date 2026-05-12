@@ -14,15 +14,24 @@ That's it. No other files need to change.
 from __future__ import annotations
 import asyncio
 import logging
+import re
 import shutil
 import time
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from models import ToolCategory, ToolResult
 
 logger = logging.getLogger(__name__)
+
+ANSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+
+
+def clean_tool_output(value: str) -> str:
+    """Normalize CLI stderr/stdout snippets before showing them in the UI."""
+    return ANSI_RE.sub("", value or "").strip()
 
 
 class RunResult:
@@ -37,6 +46,9 @@ class RunResult:
 
 class BaseTool(ABC):
     name: str = ""
+    # Override when the registry name is not the executable name, e.g. dns_records -> dig.
+    # Set to None only for tools that do not require a local binary.
+    binary_name: str | None = ""
     category: ToolCategory = ToolCategory.SUBDOMAIN
     description: str = ""
     requires_root: bool = False
@@ -47,9 +59,18 @@ class BaseTool(ABC):
         self.data_dir = data_dir
 
     # ── Public API ────────────────────────────────────────────────
+    def availability_error(self) -> str | None:
+        """Return None when runnable, otherwise a human-readable skip reason."""
+        binary = self.binary_name if self.binary_name != "" else self.name
+        if binary is None:
+            return None
+        if shutil.which(binary) is None:
+            return f"Required binary not found: {binary}"
+        return None
+
     def is_available(self) -> bool:
-        """Return True if the underlying binary exists in PATH."""
-        return shutil.which(self.name) is not None
+        """Return True if the tool and its required local dependencies exist."""
+        return self.availability_error() is None
 
     async def execute(
         self,
@@ -86,10 +107,15 @@ class BaseTool(ABC):
             data, run = [], RunResult("", str(exc), 1, 0.0)
 
         elapsed = time.monotonic() - t0
+        error = ""
+        if run.returncode != 0:
+            error = clean_tool_output(run.stderr or f"{self.name} exited with code {run.returncode}")[:2000]
+
         return ToolResult(
             scan_id=scan_id, project_id=project_id,
             tool=self.name, category=self.category, domain=domain,
             data=data, count=len(data), elapsed_s=round(elapsed, 2),
+            error=error,
         )
 
     # ── Must implement ────────────────────────────────────────────
@@ -159,11 +185,41 @@ class BaseTool(ABC):
         return [l.strip() for l in path.read_text(errors="replace").splitlines() if l.strip()]
 
     @staticmethod
-    def _filter_oos(data: list[dict], oos: list[str]) -> list[dict]:
+    def _extract_host(value: str) -> str:
+        value = (value or "").strip().lower().lstrip("*.")
+        if not value:
+            return ""
+        if "://" in value:
+            return (urlparse(value).hostname or "").strip(".")
+        value = value.split("/", 1)[0].split("?", 1)[0]
+        if value.count(":") == 1:
+            value = value.rsplit(":", 1)[0]
+        return value.strip(".")
+
+    @classmethod
+    def _is_oos(cls, value: str, oos: list[str]) -> bool:
         import fnmatch
+        host = cls._extract_host(value)
+        if not host:
+            return False
+        for raw in oos:
+            pattern = (raw or "").strip().lower()
+            clean = cls._extract_host(pattern)
+            if not clean:
+                continue
+            if fnmatch.fnmatch(host, pattern):
+                return True
+            if pattern.startswith("*.") and host.endswith(pattern[1:]):
+                return True
+            if host == clean or host.endswith(f".{clean}"):
+                return True
+        return False
+
+    @classmethod
+    def _filter_oos(cls, data: list[dict], oos: list[str]) -> list[dict]:
         filtered = []
         for row in data:
-            host = row.get("host") or row.get("domain") or row.get("url", "")
-            if not any(fnmatch.fnmatch(host, pat) for pat in oos):
+            host = str(row.get("host") or row.get("domain") or row.get("url", ""))
+            if not cls._is_oos(host, oos):
                 filtered.append(row)
         return filtered

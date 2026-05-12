@@ -138,3 +138,11 @@ class AzureTableStorage(BaseStorage):
     async def load_storage_config(self) -> dict:
         e = self._get("Config", "config", "storage")
         return dict(e) if e else {}
+
+    async def save_tool_api_keys(self, config: dict) -> None:
+        entity = {"PartitionKey": "config", "RowKey": "tool_api_keys", **config}
+        self._upsert("Config", entity)
+
+    async def load_tool_api_keys(self) -> dict:
+        e = self._get("Config", "config", "tool_api_keys")
+        return dict(e) if e else {}

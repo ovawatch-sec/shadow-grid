@@ -47,3 +47,9 @@ class BaseStorage(ABC):
 
     @abstractmethod
     async def load_storage_config(self) -> dict: ...
+
+    @abstractmethod
+    async def save_tool_api_keys(self, config: dict) -> None: ...
+
+    @abstractmethod
+    async def load_tool_api_keys(self) -> dict: ...

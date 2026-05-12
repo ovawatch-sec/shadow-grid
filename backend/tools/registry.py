@@ -72,11 +72,18 @@ def list_tools() -> list[dict]:
     """Return tool metadata for the API /tools endpoint."""
     result = []
     for name, cls in REGISTRY.items():
+        binary_name = getattr(cls, "binary_name", "")
+        if binary_name is None:
+            binary_name = "internal"
+        elif binary_name == "":
+            binary_name = name
+
         result.append({
             "name": name,
             "category": cls.category.value,
             "description": cls.description,
             "parallel_group": cls.parallel_group,
             "requires_root": cls.requires_root,
+            "binary_name": binary_name,
         })
     return result

@@ -28,7 +28,8 @@ class NaabuTool(BaseTool):
 
     def parse(self, result: RunResult, domain: str) -> list[dict[str, Any]]:
         rows = []
-        for line in result.lines:
+        lines = result.lines or self._read_lines(self.output_dir / domain / "naabu.txt")
+        for line in lines:
             if ":" in line:
                 host, _, port_str = line.rpartition(":")
                 try:

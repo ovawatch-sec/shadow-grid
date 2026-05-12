@@ -18,7 +18,7 @@
 }
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 html, body { height: 100%; }
-body { font-family: var(--font-body); background: var(--bg); color: var(--text); font-size: 14px; line-height: 1.6; overflsg-x: hidden; }
+body { font-family: var(--font-body); background: var(--bg); color: var(--text); font-size: 14px; line-height: 1.6; overflow-x: hidden; }
 a { color: var(--accent); text-decoration: none; }
 button { cursor: pointer; border: none; background: none; font-family: inherit; }
 input, select, textarea { font-family: var(--font-body); }
@@ -72,7 +72,7 @@ code, pre { font-family: var(--font-mono); }
 .badge-skipped  { background:rgba(80,100,128,.12); color:var(--text-faint); }
 
 /* ── Tables ── */
-.table-wrap { overflsg-x:auto; width:100%; }
+.table-wrap { overflow-x:auto; width:100%; }
 table { width:100%; border-collapse:collapse; font-size:13px; }
 thead tr { border-bottom:1px solid var(--border-bright); }
 th { padding:9px 14px; text-align:left; font-family:var(--font-mono); font-size:10px; color:var(--text-dim); letter-spacing:.08em; text-transform:uppercase; white-space:nowrap; cursor:pointer; }
@@ -132,7 +132,7 @@ tbody tr:hover td { background:var(--bg-elevated); }
 .mono { font-family:var(--font-mono); }
 .text-dim { color:var(--text-dim); }
 .text-accent { color:var(--accent); }
-.pre-block { font-family:var(--font-mono); font-size:11px; line-height:1.7; color:var(--text); background:var(--bg); border:1px solid var(--border); border-radius:var(--radius); padding:14px; overflsg-x:auto; white-space:pre-wrap; max-height:320px; overflsg-y:auto; }
+.pre-block { font-family:var(--font-mono); font-size:11px; line-height:1.7; color:var(--text); background:var(--bg); border:1px solid var(--border); border-radius:var(--radius); padding:14px; overflow-x:auto; white-space:pre-wrap; max-height:320px; overflow-y:auto; }
 .spinner-sm { width:16px; height:16px; border:2px solid var(--border); border-top-color:var(--accent); border-radius:50%; animation:spin .7s linear infinite; display:inline-block; }
 @keyframes spin { to { transform:rotate(360deg); } }
 .empty-state { display:flex; flex-direction:column; align-items:center; justify-content:center; padding:48px; color:var(--text-dim); gap:12px; font-size:14px; }

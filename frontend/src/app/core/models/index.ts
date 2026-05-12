@@ -34,7 +34,10 @@ export interface ToolInfo {
   description: string;
   parallel_group: string;
   requires_root: boolean;
+  binary_name?: string;
+  binary?: string;
   available: boolean;
+  availability_error?: string;
 }
 
 export interface ToolResult {
@@ -53,10 +56,18 @@ export interface ToolResult {
 
 export interface ScanProgressEvent {
   tool: string;
-  status: 'running' | 'done' | 'error' | 'skipped' | 'start';
+  status: 'running' | 'done' | 'error' | 'skipped' | 'start' | 'completed' | 'failed' | 'cancelled';
   message: string;
   count: number;
   ts: string;
+  domain?: string;
+  phase?: string;
+  phase_index?: number;
+  phase_total?: number;
+  completed_tools?: number;
+  total_tools?: number;
+  overall_completed_tools?: number;
+  overall_total_tools?: number;
 }
 
 export interface StorageConfig {
@@ -65,4 +76,13 @@ export interface StorageConfig {
   account_name: string;
   account_key: string;
   table_prefix: string;
+}
+
+export interface ToolApiKeysConfig {
+  pdcp_api_key: string;
+  github_token: string;
+  shodan_api_key: string;
+  censys_api_id: string;
+  censys_api_secret: string;
+  chaos_key: string;
 }

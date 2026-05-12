@@ -20,7 +20,7 @@ class AmassTool(BaseTool):
 
     def parse(self, result: RunResult, domain: str) -> list[dict[str, Any]]:
         import re
-        lines = result.lines
+        lines = result.lines or self._read_lines(self.output_dir / domain / "amass.txt")
         dom_re = re.compile(r'\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}\b', re.I)
         seen, rows = set(), []
         for line in lines:

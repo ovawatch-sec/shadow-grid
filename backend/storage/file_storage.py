@@ -110,3 +110,9 @@ class FileStorage(BaseStorage):
 
     async def load_storage_config(self) -> dict:
         return self._read(self._meta / "storage_config.json") or {}
+
+    async def save_tool_api_keys(self, config: dict) -> None:
+        self._write(self._meta / "tool_api_keys.json", config)
+
+    async def load_tool_api_keys(self) -> dict:
+        return self._read(self._meta / "tool_api_keys.json") or {}

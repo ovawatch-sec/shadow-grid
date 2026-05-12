@@ -148,10 +148,19 @@ class ScanCreate(BaseModel):
 
 class ScanProgress(BaseModel):
     tool: str
-    status: str          # "running" | "done" | "error" | "skipped"
+    status: str          # "running" | "done" | "error" | "skipped" | "completed" | "failed"
     message: str = ""
     count: int = 0       # results produced
     elapsed_s: float = 0.0
+    ts: datetime = Field(default_factory=now_utc)
+    domain: str = ""
+    phase: str = ""
+    phase_index: int = 0
+    phase_total: int = 0
+    completed_tools: int = 0      # phase-completed tools
+    total_tools: int = 0          # phase-total tools
+    overall_completed_tools: int = 0
+    overall_total_tools: int = 0
 
 
 class Scan(BaseModel):
@@ -267,3 +276,17 @@ class StorageConfig(BaseModel):
     account_name: str = ""
     account_key: str = ""
     table_prefix: str = "shadowgrid"
+
+
+class ToolApiKeysConfig(BaseModel):
+    """Optional API keys consumed by external recon tools.
+
+    Blank fields mean "leave existing saved value unchanged" when saving from
+    the UI, so users do not accidentally wipe secrets by opening Settings.
+    """
+    pdcp_api_key: str = ""
+    github_token: str = ""
+    shodan_api_key: str = ""
+    censys_api_id: str = ""
+    censys_api_secret: str = ""
+    chaos_key: str = ""

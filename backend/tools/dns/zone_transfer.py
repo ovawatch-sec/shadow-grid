@@ -7,6 +7,7 @@ from tools.base import BaseTool, RunResult
 
 class ZoneTransferTool(BaseTool):
     name = "zone_transfer"
+    binary_name = "dig"
     category = ToolCategory.DNS
     description = "AXFR zone transfer attempt against all nameservers"
     parallel_group = "dns"
