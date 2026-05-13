@@ -85,4 +85,9 @@ export interface ToolApiKeysConfig {
   censys_api_id: string;
   censys_api_secret: string;
   chaos_key: string;
+  openai_api_key: string;
+  anthropic_api_key: string;
+  google_ai_api_key: string;
+  deepseek_api_key: string;
+  groq_api_key: string;
 }

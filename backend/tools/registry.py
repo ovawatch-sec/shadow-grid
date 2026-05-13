@@ -27,6 +27,8 @@ from tools.urls.katana           import KatanaTool
 from tools.urls.urlfinder        import UrlFinderTool
 from tools.asset.whois_tool      import WhoisTool
 from tools.asset.asnmap_tool     import AsnmapTool
+from tools.analysis.google_dorks  import GoogleDorksTool
+from tools.analysis.ai_analysis   import AIAnalysisTool
 
 
 # ── Registry ─────────────────────────────────────────────────────
@@ -58,6 +60,8 @@ REGISTRY: dict[str, type[BaseTool]] = {
     # Asset discovery (parallel group "asset")
     "whois":        WhoisTool,
     "asnmap":       AsnmapTool,
+    "google_dorks": GoogleDorksTool,
+    "ai_analysis":  AIAnalysisTool,
 }
 
 

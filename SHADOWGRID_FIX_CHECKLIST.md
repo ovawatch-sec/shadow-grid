@@ -100,3 +100,17 @@ If `docker compose build --no-cache` fails and you then run `docker compose up`,
 - [x] Re-ran backend Python syntax compilation successfully.
 - [x] Unit-tested API key merge/masking/env application and alive URL fallback generation.
 - [ ] Rebuild and run the Docker image locally to validate real `pd-httpx`, `nuclei`, and `gowitness` behavior with live network access.
+
+## v5 Additions
+
+- [x] Screenshot result cards now render the actual image preview.
+- [x] Screenshot click opens a lightbox with a larger preview and full-image link.
+- [x] Added safe `/api/results/{scan_id}/artifact` endpoint for screenshot/markdown artifacts.
+- [x] Added `google_dorks` internal phase-6 tool that generates manual advanced Google dorks without scraping Google.
+- [x] Added AI API key settings: OpenAI/ChatGPT, Anthropic/Claude, Google AI/Gemini, DeepSeek, and Groq.
+- [x] Added `ai_analysis` internal tool gated by saved AI API keys.
+- [x] AI Analysis runs last in phase 6 so it can consume all previous phase outputs plus dorks/screenshots/vuln output.
+- [x] AI Analysis writes `ai_analysis.md`, `ai_analysis_prompt.md`, and `ai_analysis_context.json`.
+- [x] Added AI Analysis tab for Markdown preview in the web app.
+- [x] Added Dorks tab for generated Google dork preview/export.
+- [x] Tool selection disables AI Analysis when no AI key is saved and shows a warning.

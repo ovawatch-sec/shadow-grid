@@ -6,7 +6,7 @@ import { ApiService } from '../../core/services/api.service';
 import { ToolResult } from '../../core/models';
 import Chart from 'chart.js/auto';
 
-type TabId = 'overview'|'subdomains'|'dns'|'http'|'vulns'|'urls'|'tech'|'screenshots';
+type TabId = 'overview'|'subdomains'|'dns'|'http'|'vulns'|'urls'|'tech'|'dorks'|'screenshots'|'ai';
 
 @Component({
   selector: 'sg-results',
@@ -40,7 +40,9 @@ export class ResultsComponent implements OnInit, AfterViewInit {
     {id:'vulns' as TabId, label:'Vulns'},
     {id:'urls' as TabId, label:'URLs'},
     {id:'tech' as TabId, label:'Tech Stack'},
+    {id:'dorks' as TabId, label:'Dorks'},
     {id:'screenshots' as TabId, label:'Screenshots'},
+    {id:'ai' as TabId, label:'AI Analysis'},
   ];
   severities = ['all','critical','high','medium','low','info'];
   COMMON_PORTS = new Set([80,443,8080,8443,22,21,25,3389,3306,5432,6379,27017]);
@@ -87,6 +89,10 @@ export class ResultsComponent implements OnInit, AfterViewInit {
   vulns        = computed(() => this.byTool('nuclei'));
   urls         = computed(() => this.results().filter(r => r.category === 'url').flatMap(r => r.data));
   screenshots  = computed(() => this.byTool('gowitness'));
+  dorks        = computed(() => this.byTool('google_dorks'));
+  aiReports    = computed(() => this.byTool('ai_analysis'));
+  aiMarkdown   = computed(() => this.aiReports()[0]?.['markdown'] || 'No AI analysis was generated for this scan.');
+  aiPromptPath = computed(() => this.aiReports()[0]?.['prompt_path'] || '');
   dnsRecords   = computed(() => this.byTool('dns_records'));
   zoneResults  = computed(() => this.byTool('zone_transfer'));
   whoisData    = computed(() => { const d = this.byTool('whois')[0]; return d ? d['whois'] : 'No WHOIS data'; });
@@ -216,7 +222,7 @@ export class ResultsComponent implements OnInit, AfterViewInit {
     const m: Record<TabId,number> = {
       overview:0, subdomains:this.subdomains().length, dns:this.dnsRecords().length,
       http:this.httpResults().length, vulns:this.vulns().length, urls:this.urls().length,
-      tech:this.techInventory().length, screenshots:this.screenshots().length
+      tech:this.techInventory().length, dorks:this.dorks().length, screenshots:this.screenshots().length, ai:this.aiReports().length
     };
     return m[t] || 0;
   }
@@ -233,9 +239,19 @@ export class ResultsComponent implements OnInit, AfterViewInit {
   exportSubdomains()  { this.exportTxt(this.filteredSubs().map((s: any) => s['host']), 'subdomains.txt'); }
   exportHttpUrls()    { this.exportTxt(this.filteredHttp().map((h: any) => h['url']), 'alive_urls.txt'); }
   exportAllUrls()     { this.exportTxt(this.filteredUrls().map((u: any) => u['url']), 'urls.txt'); }
+  exportDorks()       { this.exportTxt(this.dorks().map((d: any) => d['dork']), 'google_dorks.txt'); }
+  exportAiMarkdown()  { this.exportTxt([this.aiMarkdown()], 'ai_analysis.md'); }
 
   copy(text: string)  { navigator.clipboard.writeText(text).catch(() => {}); }
   copyItem(item: any, key: string) { this.copy(item[key] || ''); }
+
+  artifactSrc(item: any): string {
+    return item?.['path'] ? this.api.artifactUrl(this.scanId, item['path']) : '';
+  }
+
+  artifactPath(path: string | undefined): string {
+    return path ? this.api.artifactUrl(this.scanId, path) : '#';
+  }
 
   exportTxt(lines: string[], fname: string) {
     const a = document.createElement('a');

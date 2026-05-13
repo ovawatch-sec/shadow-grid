@@ -72,4 +72,12 @@ export class ApiService {
   saveToolApiKeys(cfg: ToolApiKeysConfig): Observable<any> {
     return this.http.post<any>(`${this.base}/settings/api-keys`, cfg);
   }
+
+  artifactUrl(scanId: string, path: string): string {
+    return `${this.base}/results/${scanId}/artifact?path=${encodeURIComponent(path)}`;
+  }
+
+  artifactTextUrl(scanId: string, path: string): string {
+    return `${this.base}/results/${scanId}/artifact-text?path=${encodeURIComponent(path)}`;
+  }
 }

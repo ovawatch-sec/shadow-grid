@@ -40,6 +40,8 @@ class ToolCategory(str, Enum):
     SCREENSHOT   = "screenshot"
     TECH         = "tech"
     ASSET        = "asset"
+    DORK         = "dork"
+    AI           = "ai"
 
 
 class ResultSeverity(str, Enum):
@@ -141,6 +143,7 @@ class ScanCreate(BaseModel):
             "nuclei","gowitness","whatweb",
             "waybackurls","gau","katana","urlfinder",
             "whois","asnmap",
+            "google_dorks","ai_analysis",
         ]
     )
     wordlist: Optional[str] = None
@@ -290,3 +293,8 @@ class ToolApiKeysConfig(BaseModel):
     censys_api_id: str = ""
     censys_api_secret: str = ""
     chaos_key: str = ""
+    openai_api_key: str = ""
+    anthropic_api_key: str = ""
+    google_ai_api_key: str = ""
+    deepseek_api_key: str = ""
+    groq_api_key: str = ""

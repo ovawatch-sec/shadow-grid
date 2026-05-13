@@ -44,3 +44,35 @@
 ## Not fully validated here
 
 A full Docker build and live recon scan were not completed in this environment because the available execution window is shorter than the Docker/npm/go build time for this project. The user's Docker log already showed the Angular build completing after the v2 font fix, and v3 only adds targeted Docker/runtime dependency fixes plus backend/frontend progress logic.
+
+## v5 Validation Notes
+
+Commands run in this environment:
+
+```bash
+PYTHONPATH=backend python3 -m compileall -q backend
+PYTHONPATH=backend python3 - <<'PY'
+from pathlib import Path
+from tools.registry import REGISTRY, get_tool
+assert 'google_dorks' in REGISTRY
+assert 'ai_analysis' in REGISTRY
+assert get_tool('google_dorks', Path('/tmp/out'), Path('/tmp/data')).availability_error() is None
+assert 'AI API key' in get_tool('ai_analysis', Path('/tmp/out'), Path('/tmp/data')).availability_error()
+PY
+PYTHONPATH=backend OPENAI_API_KEY=test python3 - <<'PY'
+from pathlib import Path
+from tools.registry import get_tool
+assert get_tool('ai_analysis', Path('/tmp/out'), Path('/tmp/data')).availability_error() is None
+PY
+```
+
+Also validated:
+
+- Tool API key merge keeps existing masked/blank secrets instead of wiping them.
+- Google dork tool writes `google_dorks.md` and returns dork rows from a dummy `subdomains_merged.txt`.
+- Backend artifact serving path is constrained under `settings.output_dir` to block traversal.
+
+Not validated here:
+
+- Full Docker build/live recon scan. The project build takes several minutes and requires the external toolchain/network available in your Docker environment.
+- Real AI provider API calls. The tool has fallback Markdown output if the provider call fails.
