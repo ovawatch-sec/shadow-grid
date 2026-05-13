@@ -35,7 +35,7 @@ PHASES: list[dict[str, object]] = [
     {"index": 3, "name": "DNS Resolution", "tools": ["dnsx", "dns_records", "zone_transfer"]},
     {"index": 4, "name": "HTTP Probing & Port Scanning", "tools": ["httpx", "naabu"]},
     {"index": 5, "name": "URL Discovery", "tools": ["waybackurls", "gau", "katana", "urlfinder"]},
-    {"index": 6, "name": "Vulnerability Scan, Screenshots & Tech", "tools": ["nuclei", "gowitness", "whatweb"]},
+    {"index": 6, "name": "Vulnerability Scan, Screenshots, Dorks & AI", "tools": ["google_dorks", "nuclei", "gowitness", "whatweb", "ai_analysis"]},
 ]
 
 SUBDOMAIN_FILES = (
@@ -443,15 +443,33 @@ async def _run_phase(
     )
 
     completed_ref = {"value": 0}
-    results = await asyncio.gather(*[
-        _run_tool(
+    results: list[ToolResult | None] = []
+
+    # AI analysis must run last because it consumes the artifacts/results produced
+    # by earlier phases plus phase-6 tools such as nuclei, gowitness and dorks.
+    ai_tools = [t for t in tools if t == "ai_analysis"]
+    normal_tools = [t for t in tools if t != "ai_analysis"]
+
+    if normal_tools:
+        normal_results = await asyncio.gather(*[
+            _run_tool(
+                tool_name, domain, scan, oos, output_dir, data_dir, storage, scan.wordlist,
+                phase=name, phase_index=index, completed_tools_ref=completed_ref, total_tools=len(tools),
+                overall_completed_tools_ref=overall_completed_tools_ref,
+                overall_total_tools=overall_total_tools,
+            )
+            for tool_name in normal_tools
+        ])
+        results.extend(normal_results)
+
+    for tool_name in ai_tools:
+        ai_result = await _run_tool(
             tool_name, domain, scan, oos, output_dir, data_dir, storage, scan.wordlist,
             phase=name, phase_index=index, completed_tools_ref=completed_ref, total_tools=len(tools),
             overall_completed_tools_ref=overall_completed_tools_ref,
             overall_total_tools=overall_total_tools,
         )
-        for tool_name in tools
-    ])
+        results.append(ai_result)
 
     await _emit(
         scan, storage, "__phase__", "done", f"{label} complete",

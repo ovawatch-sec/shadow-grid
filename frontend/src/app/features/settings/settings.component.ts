@@ -11,7 +11,7 @@ import { StorageConfig, ToolApiKeysConfig } from '../../core/models';
   template: `
     <div class="page">
       <h1 class="page-title">Settings</h1>
-      <p class="page-sub" style="margin-bottom:28px">Configure storage, API keys and framework options</p>
+      <p class="page-sub" style="margin-bottom:28px">Configure storage, recon provider keys, and AI analysis keys</p>
 
       <div class="settings-grid">
         <div class="card">
@@ -59,7 +59,7 @@ import { StorageConfig, ToolApiKeysConfig } from '../../core/models';
 
         <div class="card">
           <h3 class="section-title">Recon API Keys</h3>
-          <p class="section-copy">Optional keys used by tools that need authenticated APIs. Blank fields keep the existing saved value.</p>
+          <p class="section-copy">Optional keys used by recon tools that need authenticated APIs. Blank fields keep the existing saved value.</p>
 
           <div class="form-group">
             <label class="form-label">ProjectDiscovery Cloud API Key</label>
@@ -69,7 +69,7 @@ import { StorageConfig, ToolApiKeysConfig } from '../../core/models';
 
           <div class="form-group">
             <label class="form-label">GitHub Token</label>
-            <input class="form-input" type="password" [(ngModel)]="apiKeys.github_token" placeholder="Optional for tools/providers that query GitHub" />
+            <input class="form-input" type="password" [(ngModel)]="apiKeys.github_token" placeholder="Optional for providers that query GitHub" />
           </div>
 
           <div class="form-group">
@@ -90,21 +90,56 @@ import { StorageConfig, ToolApiKeysConfig } from '../../core/models';
 
           <div class="form-group">
             <label class="form-label">Chaos API Key</label>
-            <input class="form-input" type="password" [(ngModel)]="apiKeys.chaos_key" placeholder="Optional future ProjectDiscovery Chaos key" />
+            <input class="form-input" type="password" [(ngModel)]="apiKeys.chaos_key" placeholder="Optional ProjectDiscovery Chaos key" />
+          </div>
+        </div>
+
+        <div class="card ai-card">
+          <h3 class="section-title">AI Analysis API Keys</h3>
+          <p class="section-copy">Required only for the AI Analysis scan option. Add at least one provider key to enable the tool.</p>
+
+          <div class="form-group">
+            <label class="form-label">ChatGPT / OpenAI API Key</label>
+            <input class="form-input" type="password" [(ngModel)]="apiKeys.openai_api_key" placeholder="sk-…" />
           </div>
 
-          @if (keysSaved()) {
-            <div class="alert alert-success" style="margin-bottom:16px">✓ API keys saved</div>
-          }
-          @if (keysError()) {
-            <div class="alert alert-danger" style="margin-bottom:16px">✗ {{keysError()}}</div>
-          }
+          <div class="form-group">
+            <label class="form-label">Claude / Anthropic API Key</label>
+            <input class="form-input" type="password" [(ngModel)]="apiKeys.anthropic_api_key" placeholder="sk-ant-…" />
+          </div>
 
-          <button class="btn btn-primary" (click)="saveApiKeys()" [disabled]="keysSaving()">
-            @if (keysSaving()) { <span class="spinner-sm"></span> }
-            Save API Keys
-          </button>
+          <div class="form-group">
+            <label class="form-label">Google AI / Gemini API Key</label>
+            <input class="form-input" type="password" [(ngModel)]="apiKeys.google_ai_api_key" placeholder="Optional" />
+          </div>
+
+          <div class="two-col">
+            <div class="form-group">
+              <label class="form-label">DeepSeek API Key</label>
+              <input class="form-input" type="password" [(ngModel)]="apiKeys.deepseek_api_key" placeholder="Optional" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Groq API Key</label>
+              <input class="form-input" type="password" [(ngModel)]="apiKeys.groq_api_key" placeholder="Optional" />
+            </div>
+          </div>
+
+          <div class="alert alert-warning" style="margin-bottom:16px">AI Analysis stays disabled in tool selection until one AI key is saved.</div>
         </div>
+      </div>
+
+      <div class="card" style="max-width:960px;margin-top:16px">
+        <h3 class="section-title" style="margin-bottom:16px">Save API Keys</h3>
+        @if (keysSaved()) {
+          <div class="alert alert-success" style="margin-bottom:16px">✓ API keys saved</div>
+        }
+        @if (keysError()) {
+          <div class="alert alert-danger" style="margin-bottom:16px">✗ {{keysError()}}</div>
+        }
+        <button class="btn btn-primary" (click)="saveApiKeys()" [disabled]="keysSaving()">
+          @if (keysSaving()) { <span class="spinner-sm"></span> }
+          Save Recon + AI API Keys
+        </button>
       </div>
 
       <div class="card" style="max-width:960px;margin-top:16px">
@@ -120,6 +155,7 @@ import { StorageConfig, ToolApiKeysConfig } from '../../core/models';
     .page { padding:32px; max-width:1200px; margin:0 auto; }
     .page-title { font-family:var(--font-head); font-size:24px; font-weight:700; }
     .settings-grid { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:16px; align-items:start; }
+    .ai-card { grid-column:1 / -1; max-width:720px; }
     .section-title { font-family:var(--font-head); font-weight:600; margin-bottom:4px; }
     .section-copy { font-size:12px; color:var(--text-dim); margin-bottom:20px; }
     .toggle-row { display:flex; align-items:center; justify-content:space-between; cursor:pointer; }
@@ -129,12 +165,15 @@ import { StorageConfig, ToolApiKeysConfig } from '../../core/models';
     .two-col { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:12px; }
     .about-row { display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid var(--border); font-size:13px; }
     .about-row:last-child { border-bottom:none; }
-    @media (max-width: 900px) { .settings-grid, .two-col { grid-template-columns:1fr; } }
+    @media (max-width: 900px) { .settings-grid, .two-col { grid-template-columns:1fr; } .ai-card { max-width:none; } }
   `]
 })
 export class SettingsComponent implements OnInit {
   storageCfg: StorageConfig = { azure_enabled:false, connection_string:'', account_name:'', account_key:'', table_prefix:'shadowgrid' };
-  apiKeys: ToolApiKeysConfig = { pdcp_api_key:'', github_token:'', shodan_api_key:'', censys_api_id:'', censys_api_secret:'', chaos_key:'' };
+  apiKeys: ToolApiKeysConfig = {
+    pdcp_api_key:'', github_token:'', shodan_api_key:'', censys_api_id:'', censys_api_secret:'', chaos_key:'',
+    openai_api_key:'', anthropic_api_key:'', google_ai_api_key:'', deepseek_api_key:'', groq_api_key:''
+  };
 
   storageSaving = signal(false);
   storageSaved = signal(false);
@@ -147,7 +186,7 @@ export class SettingsComponent implements OnInit {
 
   ngOnInit() {
     this.api.getStorageConfig().subscribe(c => { this.storageCfg = { ...c, account_key: '' }; });
-    this.api.getToolApiKeys().subscribe(c => { this.apiKeys = { ...c }; });
+    this.api.getToolApiKeys().subscribe(c => { this.apiKeys = { ...this.apiKeys, ...c }; });
   }
 
   saveStorage() {
@@ -161,7 +200,7 @@ export class SettingsComponent implements OnInit {
   saveApiKeys() {
     this.keysSaving.set(true); this.keysSaved.set(false); this.keysError.set('');
     this.api.saveToolApiKeys(this.apiKeys).subscribe({
-      next: () => { this.keysSaving.set(false); this.keysSaved.set(true); this.api.getToolApiKeys().subscribe(c => this.apiKeys = { ...c }); setTimeout(() => this.keysSaved.set(false), 3000); },
+      next: () => { this.keysSaving.set(false); this.keysSaved.set(true); this.api.getToolApiKeys().subscribe(c => this.apiKeys = { ...this.apiKeys, ...c }); setTimeout(() => this.keysSaved.set(false), 3000); },
       error: e => { this.keysSaving.set(false); this.keysError.set(e.message || 'Save failed'); },
     });
   }

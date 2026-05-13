@@ -20,6 +20,9 @@ done
 if command -v asnmap &>/dev/null && [ -z "${PDCP_API_KEY:-}" ]; then
     echo "  !  asnmap installed but PDCP_API_KEY is empty — asnmap will be skipped unless configured in Settings"
 fi
+if [ -z "${OPENAI_API_KEY:-}${ANTHROPIC_API_KEY:-}${GOOGLE_AI_API_KEY:-}${DEEPSEEK_API_KEY:-}${GROQ_API_KEY:-}" ]; then
+    echo "  !  AI Analysis disabled until an AI API key is saved in Settings"
+fi
 echo ""
 
 # Fetch nuclei templates in background (non-blocking, best-effort)

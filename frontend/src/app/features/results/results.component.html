@@ -288,6 +288,31 @@
       }
     }
 
+    <!-- ── GOOGLE DORKS ── -->
+    @if (activeTab() === 'dorks') {
+      @if (dorks().length === 0) {
+        <div class="empty-state"><div class="empty-icon">⌕</div><p>No Google dorks generated</p></div>
+      } @else {
+        <div class="card" style="padding:0;overflow:hidden">
+          <div class="section-head" style="padding:14px 16px;border-bottom:1px solid var(--border)">
+            <span class="section-title">Advanced Google Dorks</span>
+            <button class="btn btn-outline btn-sm" (click)="exportDorks()">↓ Export</button>
+          </div>
+          @for (d of dorks(); track $index) {
+            <div class="url-row">
+              <span class="badge badge-tool" style="font-size:9px;flex-shrink:0">{{d['priority']}}</span>
+              <div style="flex:1;min-width:0">
+                <div class="url-text" style="white-space:normal;color:var(--text-main)">{{d['purpose']}}</div>
+                <div class="td-mono" style="font-size:10px;color:var(--text-dim);overflow:hidden;text-overflow:ellipsis">{{d['dork']}}</div>
+              </div>
+              <a class="btn btn-outline btn-sm" [href]="d['google_url']" target="_blank">open</a>
+              <button class="copy-btn" (click)="copyItem(d, 'dork')">copy</button>
+            </div>
+          }
+        </div>
+      }
+    }
+
     <!-- ── SCREENSHOTS ── -->
     @if (activeTab() === 'screenshots') {
       @if (screenshots().length === 0) {
@@ -295,9 +320,12 @@
       } @else {
         <div class="screenshots-grid">
           @for (s of screenshots(); track $index) {
-            <div class="ss-card" (click)="lightbox = s">
-              <div class="ss-img-wrap"><div class="ss-placeholder">▦</div><span class="ss-label"><img [src]="{{['filename']}}"/></span></div>
-            </div>
+            <button class="ss-card" (click)="lightbox = s" type="button">
+              <div class="ss-img-wrap">
+                <img class="ss-img" [src]="artifactSrc(s)" [alt]="s['filename']" loading="lazy" />
+              </div>
+              <span class="ss-label">{{s['filename']}}</span>
+            </button>
           }
         </div>
       }
@@ -306,9 +334,33 @@
           <div class="lightbox-box" (click)="$event.stopPropagation()">
             <div class="lb-head">
               <span>{{lightbox['filename']}}</span>
-              <button class="btn btn-ghost" (click)="lightbox = null">✕</button>
+              <div style="display:flex;gap:8px;align-items:center">
+                <a class="btn btn-outline btn-sm" [href]="artifactSrc(lightbox)" target="_blank">Open full</a>
+                <button class="btn btn-ghost" (click)="lightbox = null">✕</button>
+              </div>
+            </div>
+            <div class="lb-body">
+              <img class="lb-img" [src]="artifactSrc(lightbox)" [alt]="lightbox['filename']" />
             </div>
           </div>
+        </div>
+      }
+    }
+
+    <!-- ── AI ANALYSIS ── -->
+    @if (activeTab() === 'ai') {
+      @if (aiReports().length === 0) {
+        <div class="empty-state"><div class="empty-icon">◆</div><p>No AI analysis. Select AI Analysis during scan and configure an AI key in Settings.</p></div>
+      } @else {
+        <div class="card ai-report">
+          <div class="section-head" style="margin-bottom:12px">
+            <span class="section-title">AI Recon Analysis</span>
+            <div style="display:flex;gap:8px;align-items:center">
+              @if (aiPromptPath()) { <a class="btn btn-outline btn-sm" [href]="artifactPath(aiPromptPath())" target="_blank">Prompt .md</a> }
+              <button class="btn btn-outline btn-sm" (click)="exportAiMarkdown()">↓ Download .md</button>
+            </div>
+          </div>
+          <pre class="markdown-preview">{{aiMarkdown()}}</pre>
         </div>
       }
     }

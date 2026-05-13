@@ -11,7 +11,7 @@ const DEFAULT_TOOLS = [
   'dnsx','dns_records','zone_transfer',
   'httpx','naabu','nuclei','gowitness','whatweb',
   'waybackurls','gau','katana','urlfinder',
-  'whois','asnmap'
+  'whois','asnmap','google_dorks'
 ];
 
 const TOOL_GROUPS: Record<string, string[]> = {
@@ -19,9 +19,10 @@ const TOOL_GROUPS: Record<string, string[]> = {
   'DNS':                   ['dnsx','dns_records','zone_transfer'],
   'HTTP & Ports':          ['httpx','naabu'],
   'Vulnerability':         ['nuclei'],
-  'Screenshots & Tech':    ['gowitness','whatweb'],
+  'Screenshots, Dorks & Tech': ['gowitness','whatweb','google_dorks'],
   'URL Discovery':         ['waybackurls','gau','katana','urlfinder'],
   'Asset Discovery':       ['whois','asnmap'],
+  'AI':                    ['ai_analysis'],
 };
 
 @Component({
@@ -122,11 +123,14 @@ const TOOL_GROUPS: Record<string, string[]> = {
                 </div>
                 <div class="tg-tools">
                   @for (t of entry[1]; track t) {
-                    <label class="tool-chk" [class.unavail]="!toolAvail(t)">
+                    <label class="tool-chk" [class.unavail]="!toolAvail(t)" [title]="toolError(t)">
                       <input type="checkbox" [checked]="selectedTools.has(t)" (change)="toggleTool(t)" [disabled]="!toolAvail(t)" />
                       <span class="tool-name">{{t}}</span>
-                      @if (!toolAvail(t)) { <span class="badge badge-dead" style="font-size:9px">not installed</span> }
+                      @if (!toolAvail(t)) { <span class="badge badge-dead" style="font-size:9px">{{unavailableLabel(t)}}</span> }
                     </label>
+                    @if (t === 'ai_analysis' && !toolAvail(t)) {
+                      <div class="ai-warning">Configure an AI API key in Settings to enable AI Analysis.</div>
+                    }
                   }
                 </div>
               </div>
@@ -208,6 +212,7 @@ const TOOL_GROUPS: Record<string, string[]> = {
     .tool-chk:hover { border-color:var(--accent); }
     .tool-chk.unavail { opacity:.5; cursor:not-allowed; }
     .tool-name { font-family:var(--font-mono); font-size:12px; }
+    .ai-warning { flex-basis:100%; font-size:11px; color:var(--sev-medium); padding:4px 2px; }
     input[type=checkbox] { accent-color:var(--accent); cursor:pointer; }
   `]
 })
@@ -242,6 +247,15 @@ export class ProjectDetailComponent implements OnInit {
     return t ? t.available : true;
   }
 
+  toolError(name: string): string {
+    const t = this.availableTools().find(x => x.name === name);
+    return t?.availability_error || '';
+  }
+
+  unavailableLabel(name: string): string {
+    return name === 'ai_analysis' ? 'needs API key' : 'unavailable';
+  }
+
   addTarget(isOos: boolean) {
     const domain = isOos ? this.newOos.trim() : this.newTarget.trim();
     if (!domain) return;
@@ -258,13 +272,15 @@ export class ProjectDetailComponent implements OnInit {
   }
 
   toggleTool(name: string) {
+    if (!this.toolAvail(name)) return;
     if (this.selectedTools.has(name)) this.selectedTools.delete(name);
     else this.selectedTools.add(name);
   }
 
   toggleGroup(tools: string[]) {
-    const allOn = tools.every(t => this.selectedTools.has(t));
-    tools.forEach(t => allOn ? this.selectedTools.delete(t) : this.selectedTools.add(t));
+    const available = tools.filter(t => this.toolAvail(t));
+    const allOn = available.every(t => this.selectedTools.has(t));
+    available.forEach(t => allOn ? this.selectedTools.delete(t) : this.selectedTools.add(t));
   }
 
   launchScan() {
