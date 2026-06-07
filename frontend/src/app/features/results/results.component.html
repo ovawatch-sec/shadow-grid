@@ -304,6 +304,15 @@
               <div style="flex:1;min-width:0">
                 <div class="url-text" style="white-space:normal;color:var(--text-main)">{{d['purpose']}}</div>
                 <div class="td-mono" style="font-size:10px;color:var(--text-dim);overflow:hidden;text-overflow:ellipsis">{{d['dork']}}</div>
+                @if (d['url'] && d['engine'] !== 'manual') {
+                  <a class="url-text" style="white-space:normal;display:block;margin-top:4px;font-size:12px" [href]="d['url']" target="_blank">
+                    {{d['title'] || d['url']}}
+                  </a>
+                  @if (d['snippet']) {
+                    <div style="font-size:11px;color:var(--text-dim);margin-top:2px">{{d['snippet'] | slice:0:200}}</div>
+                  }
+                  <span class="badge badge-tool" style="font-size:8px;margin-top:2px">via {{d['engine']}}</span>
+                }
               </div>
               <a class="btn btn-outline btn-sm" [href]="d['google_url']" target="_blank">open</a>
               <button class="copy-btn" (click)="copyItem(d, 'dork')">copy</button>

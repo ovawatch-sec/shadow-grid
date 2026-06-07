@@ -87,3 +87,10 @@ class DualStorage(BaseStorage):
 
     async def load_tool_api_keys(self) -> dict:
         return await self._file.load_tool_api_keys()
+
+    # ── Auth (local file only — never mirrored to Azure) ──────
+    async def save_auth(self, record: dict) -> None:
+        await self._file.save_auth(record)
+
+    async def load_auth(self) -> dict:
+        return await self._file.load_auth()

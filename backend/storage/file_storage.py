@@ -116,3 +116,10 @@ class FileStorage(BaseStorage):
 
     async def load_tool_api_keys(self) -> dict:
         return self._read(self._meta / "tool_api_keys.json") or {}
+
+    # ── Auth ───────────────────────────────────────────────
+    async def save_auth(self, record: dict) -> None:
+        self._write(self._meta / "auth.json", record)
+
+    async def load_auth(self) -> dict:
+        return self._read(self._meta / "auth.json") or {}

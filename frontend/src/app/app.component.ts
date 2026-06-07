@@ -1,10 +1,12 @@
-import { Component } from "@angular/core";
-import { RouterOutlet, RouterLink, RouterLinkActive } from "@angular/router";
+import { Component, inject } from "@angular/core";
+import { CommonModule } from "@angular/common";
+import { RouterOutlet, RouterLink, RouterLinkActive, Router } from "@angular/router";
+import { AuthService } from "./core/services/auth.service";
 
 @Component({
   selector: "sg-root",
   standalone: true,
-  imports: [RouterOutlet, RouterLink, RouterLinkActive],
+  imports: [CommonModule, RouterOutlet, RouterLink, RouterLinkActive],
   template: `
     <div class="shell">
       <header class="topbar">
@@ -14,15 +16,14 @@ import { RouterOutlet, RouterLink, RouterLinkActive } from "@angular/router";
           </div>
           <span>SHADOW<span class="logo-accent">GRID</span></span>
         </div>
-        <div class="topbar-sep"></div>
-        <nav class="topbar-nav">
-          <a class="nav-link" routerLink="/projects" routerLinkActive="active"
-            >Projects</a
-          >
-          <a class="nav-link" routerLink="/settings" routerLinkActive="active"
-            >Settings</a
-          >
-        </nav>
+        @if (auth.authenticated()) {
+          <div class="topbar-sep"></div>
+          <nav class="topbar-nav">
+            <a class="nav-link" routerLink="/projects" routerLinkActive="active">Projects</a>
+            <a class="nav-link" routerLink="/settings" routerLinkActive="active">Settings</a>
+          </nav>
+          <button class="nav-link logout" (click)="logout()">Logout</button>
+        }
       </header>
       <main class="main-content">
         <router-outlet />
@@ -82,6 +83,12 @@ import { RouterOutlet, RouterLink, RouterLinkActive } from "@angular/router";
         display: flex;
         gap: 4px;
       }
+      .logout {
+        margin-left: auto;
+        background: none;
+        border: 1px solid var(--border);
+        cursor: pointer;
+      }
       .nav-link {
         padding: 6px 14px;
         border-radius: var(--radius);
@@ -106,4 +113,12 @@ import { RouterOutlet, RouterLink, RouterLinkActive } from "@angular/router";
     `,
   ],
 })
-export class AppComponent {}
+export class AppComponent {
+  auth = inject(AuthService);
+  private router = inject(Router);
+
+  logout(): void {
+    this.auth.logout();
+    this.router.navigate(['/login']);
+  }
+}

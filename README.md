@@ -114,7 +114,23 @@ AZURE_CONNECTION_STRING=DefaultEndpointsProtocol=https;AccountName=...
 | 3 — DNS | dnsx, dns_records, zone_transfer | parallel |
 | 4 — HTTP | httpx, naabu | parallel |
 | 5 — URLs | waybackurls, gau, katana, urlfinder | **all parallel** |
-| 6 — Vuln+SS | nuclei, gowitness, whatweb | parallel |
+| 6 — Vuln+SS | nuclei, subdomain_takeover, gowitness, whatweb, google_dorks, ai_analysis | parallel |
+
+> **First run:** the web UI requires you to set a password on first visit, then log
+> in before any project, scan, or settings page is reachable.
+>
+> **Cancel scan:** a running scan can be stopped from the live progress page; the
+> backend terminates in-flight tool processes.
+>
+> **Resume vs. fresh:** launching a scan on a project that already has results
+> prompts you to continue from the previous results or start a new scan.
+>
+> **Google dorking** now executes the generated dorks and returns live results —
+> via the Google Programmable Search (CSE) API when a key + engine ID are saved in
+> Settings, otherwise via a DuckDuckGo fallback.
+>
+> **subdomain_takeover** hunts dangling/claimable subdomains (nuclei takeover
+> templates, plus subzy when available) and writes findings to the results table.
 
 ## Pre-installed Tools
 
@@ -129,6 +145,7 @@ AZURE_CONNECTION_STRING=DefaultEndpointsProtocol=https;AccountName=...
 | httpx | HTTP probing + tech detection |
 | naabu | Port scanning (top 1000) |
 | nuclei | Vulnerability scanning |
+| subzy | Subdomain takeover detection (secondary engine) |
 | gowitness | Web screenshots |
 | whatweb | Technology fingerprinting |
 | waybackurls | Historical URLs from Wayback Machine |

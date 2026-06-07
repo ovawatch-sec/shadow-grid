@@ -9,7 +9,7 @@ import { Project, Target, Scan, ToolInfo } from '../../core/models';
 const DEFAULT_TOOLS = [
   'crtsh','assetfinder','subfinder','amass','shuffledns',
   'dnsx','dns_records','zone_transfer',
-  'httpx','naabu','nuclei','gowitness','whatweb',
+  'httpx','naabu','nuclei','subdomain_takeover','gowitness','whatweb',
   'waybackurls','gau','katana','urlfinder',
   'whois','asnmap','google_dorks'
 ];
@@ -18,7 +18,7 @@ const TOOL_GROUPS: Record<string, string[]> = {
   'Subdomain Enumeration': ['crtsh','assetfinder','subfinder','amass','shuffledns'],
   'DNS':                   ['dnsx','dns_records','zone_transfer'],
   'HTTP & Ports':          ['httpx','naabu'],
-  'Vulnerability':         ['nuclei'],
+  'Vulnerability':         ['nuclei','subdomain_takeover'],
   'Screenshots, Dorks & Tech': ['gowitness','whatweb','google_dorks'],
   'URL Discovery':         ['waybackurls','gau','katana','urlfinder'],
   'Asset Discovery':       ['whois','asnmap'],
@@ -147,6 +147,25 @@ const TOOL_GROUPS: Record<string, string[]> = {
               @if (launching()) { <span class="spinner-sm"></span> } Launch Scan ({{selectedTools.size}} tools)
             </button>
           </div>
+
+          <!-- Resume vs. new scan prompt -->
+          @if (showResumePrompt()) {
+            <div class="modal-backdrop" (click)="cancelResumePrompt()">
+              <div class="modal-card" (click)="$event.stopPropagation()">
+                <h3>Previous scan detected</h3>
+                <p class="modal-text">
+                  This project already has scan results. Continue from the previous
+                  results (reuses finished tools, only runs new/missing ones), or start
+                  a fresh scan from scratch?
+                </p>
+                <div class="modal-actions">
+                  <button class="btn btn-outline btn-sm" (click)="cancelResumePrompt()">Cancel</button>
+                  <button class="btn btn-outline btn-sm" (click)="confirmLaunch(false)">Start New Scan</button>
+                  <button class="btn btn-primary btn-sm" (click)="confirmLaunch(true)">Continue Previous</button>
+                </div>
+              </div>
+            </div>
+          }
         }
 
         <!-- History -->
@@ -214,6 +233,11 @@ const TOOL_GROUPS: Record<string, string[]> = {
     .tool-name { font-family:var(--font-mono); font-size:12px; }
     .ai-warning { flex-basis:100%; font-size:11px; color:var(--sev-medium); padding:4px 2px; }
     input[type=checkbox] { accent-color:var(--accent); cursor:pointer; }
+    .modal-backdrop { position:fixed; inset:0; background:rgba(0,0,0,.6); display:flex; align-items:center; justify-content:center; z-index:200; }
+    .modal-card { background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius-lg); padding:24px; max-width:460px; width:90%; }
+    .modal-card h3 { font-family:var(--font-head); font-weight:600; margin-bottom:10px; }
+    .modal-text { color:var(--text-dim); font-size:13px; line-height:1.5; margin-bottom:20px; }
+    .modal-actions { display:flex; gap:8px; justify-content:flex-end; flex-wrap:wrap; }
   `]
 })
 export class ProjectDetailComponent implements OnInit {
@@ -222,6 +246,7 @@ export class ProjectDetailComponent implements OnInit {
   scans = signal<Scan[]>([]);
   availableTools = signal<ToolInfo[]>([]);
   launching = signal(false);
+  showResumePrompt = signal(false);
   tab = 'targets';
   newTarget = '';
   newOos = '';
@@ -283,10 +308,34 @@ export class ProjectDetailComponent implements OnInit {
     available.forEach(t => allOn ? this.selectedTools.delete(t) : this.selectedTools.add(t));
   }
 
+  /** A finished prior scan means we can offer to resume from its results. */
+  private hasPriorScan(): boolean {
+    return this.scans().some(s => ['completed', 'cancelled', 'failed'].includes(s.status));
+  }
+
   launchScan() {
+    if (this.inscope().length === 0 || this.launching()) return;
+    // If the project already has results, ask whether to resume or start fresh.
+    if (this.hasPriorScan()) {
+      this.showResumePrompt.set(true);
+      return;
+    }
+    this.startScan(false);
+  }
+
+  confirmLaunch(reusePrevious: boolean) {
+    this.showResumePrompt.set(false);
+    this.startScan(reusePrevious);
+  }
+
+  cancelResumePrompt() {
+    this.showResumePrompt.set(false);
+  }
+
+  private startScan(reusePrevious: boolean) {
     if (this.inscope().length === 0) return;
     this.launching.set(true);
-    this.api.startScan(this.project()!.id, [...this.selectedTools], this.customWordlist || undefined)
+    this.api.startScan(this.project()!.id, [...this.selectedTools], this.customWordlist || undefined, reusePrevious)
       .subscribe({
         next: scan => this.router.navigate(['/scan', scan.id, 'progress']),
         error: () => this.launching.set(false),

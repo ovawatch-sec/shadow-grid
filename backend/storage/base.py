@@ -53,3 +53,10 @@ class BaseStorage(ABC):
 
     @abstractmethod
     async def load_tool_api_keys(self) -> dict: ...
+
+    # ── Auth (local-only control-plane secret; not mirrored to Azure) ──
+    async def save_auth(self, record: dict) -> None:
+        raise NotImplementedError
+
+    async def load_auth(self) -> dict:
+        raise NotImplementedError

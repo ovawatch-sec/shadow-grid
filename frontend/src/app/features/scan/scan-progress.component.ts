@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy, signal, computed } from '@angular/core';
+import { Component, OnInit, OnDestroy, NgZone, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { ApiService } from '../../core/services/api.service';
@@ -23,9 +23,16 @@ type ProgressRow = ScanProgressEvent & { key: string };
           <h1 class="page-title">{{done() ? finalTitle() : 'Scan Running'}}</h1>
           <div class="mono text-dim">{{scanId.slice(0,8)}}…</div>
         </div>
-        <div class="overall-box">
-          <span>{{overallPercent()}}%</span>
-          <small>{{completedTools()}} / {{totalTools()}} tools finished</small>
+        <div class="header-right">
+          @if (!done()) {
+            <button class="btn btn-danger btn-sm" [disabled]="cancelling()" (click)="cancelScan()">
+              @if (cancelling()) { <span class="spinner-sm"></span> } Cancel Scan
+            </button>
+          }
+          <div class="overall-box">
+            <span>{{overallPercent()}}%</span>
+            <small>{{completedTools()}} / {{totalTools()}} tools finished</small>
+          </div>
         </div>
       </div>
 
@@ -88,6 +95,7 @@ type ProgressRow = ScanProgressEvent & { key: string };
     .breadcrumb a { color:var(--accent); }
     .sep { color:var(--text-faint); }
     .progress-header { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:12px; }
+    .header-right { display:flex; align-items:center; gap:16px; }
     .page-title { font-family:var(--font-head); font-size:22px; font-weight:700; margin-bottom:4px; }
     .overall-box { display:flex; flex-direction:column; align-items:flex-end; gap:2px; font-family:var(--font-mono); }
     .overall-box span { color:var(--accent); font-size:20px; font-weight:700; }
@@ -123,6 +131,7 @@ export class ScanProgressComponent implements OnInit, OnDestroy {
   currentPhase = signal('');
   done = signal(false);
   failed = signal(false);
+  cancelling = signal(false);
   finalStatus = signal('');
 
   phaseToolDone = signal(0);
@@ -147,7 +156,7 @@ export class ScanProgressComponent implements OnInit, OnDestroy {
   private es?: EventSource;
   private pollHandle?: number;
 
-  constructor(private route: ActivatedRoute, private api: ApiService) {}
+  constructor(private route: ActivatedRoute, private api: ApiService, private zone: NgZone) {}
 
   ngOnInit() {
     this.scanId = this.route.snapshot.paramMap.get('id')!;
@@ -164,21 +173,37 @@ export class ScanProgressComponent implements OnInit, OnDestroy {
     if (this.pollHandle) window.clearInterval(this.pollHandle);
   }
 
+  cancelScan() {
+    if (this.done() || this.cancelling()) return;
+    if (!confirm('Cancel this scan? Running tools will be stopped.')) return;
+    this.cancelling.set(true);
+    this.api.cancelScan(this.scanId).subscribe({
+      next: () => { this.cancelling.set(false); this.checkScanStatus(); },
+      error: () => { this.cancelling.set(false); },
+    });
+  }
+
   private openStream() {
     this.es?.close();
-    this.es = new EventSource(`/api/scans/${this.scanId}/progress`);
+    this.es = new EventSource(this.api.progressStreamUrl(this.scanId));
 
+    // EventSource is not patched by zone.js, so its callbacks fire outside the
+    // Angular zone and signal writes would not trigger change detection — the
+    // progress UI would only repaint on some other zone event (or at scan end).
+    // Re-enter the zone so every streamed event renders live.
     this.es.onmessage = (e) => {
       if (!e.data || e.data === '{}') return;
-      try {
-        const raw = JSON.parse(e.data);
-        if (raw.heartbeat) return;
-        this.applyEvent(raw as ScanProgressEvent);
-      } catch {}
+      this.zone.run(() => {
+        try {
+          const raw = JSON.parse(e.data);
+          if (raw.heartbeat) return;
+          this.applyEvent(raw as ScanProgressEvent);
+        } catch {}
+      });
     };
 
     // Never mark the scan complete just because SSE had a network/proxy hiccup.
-    this.es.onerror = () => this.checkScanStatus();
+    this.es.onerror = () => this.zone.run(() => this.checkScanStatus());
   }
 
   private applyEvent(ev: ScanProgressEvent) {
