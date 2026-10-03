@@ -267,11 +267,56 @@ python3 recon.py -d example.com shop.example.com --oos "*.internal.example.com"
 # Custom output / data directories
 python3 recon.py -d example.com --output-dir ./output --data-dir ./data
 
-# List all tools and their availability
-python3 recon.py -d x --list-tools
+# List all tools, with the exact reason any of them is unavailable
+python3 recon.py --list-tools
 ```
 
 > The CLI shares the exact same scan engine and tool layer as the web app — only the entry point differs.
+
+### API keys for the CLI (`.env`)
+
+The web UI stores API keys in Settings and Docker passes them as container
+environment variables. The CLI has neither, so it reads a local credential
+file:
+
+```bash
+cp .env.example .env
+chmod 600 .env          # real credentials — .gitignore already excludes it
+$EDITOR .env            # fill in only the keys you have
+
+# Confirm what got loaded (values are masked, never printed)
+python3 recon.py --show-config
+```
+
+`.env.example` documents every supported variable, which tool consumes it, and
+what happens without it. Blank entries are ignored, so an unfilled placeholder
+never shadows a real environment variable.
+
+**Where the file is looked up** — first match wins:
+
+| Order | Location |
+|---|---|
+| 1 | `--env-file /path/to/file` |
+| 2 | `$SHADOWGRID_ENV_FILE` |
+| 3 | `./.env` (current directory) |
+| 4 | `<repo root>/.env` |
+| 5 | `~/.config/shadowgrid/.env` |
+
+A path given through `--env-file` or `$SHADOWGRID_ENV_FILE` must exist — a typo
+is an error, not a silent fallback.
+
+**Precedence** — highest first:
+
+1. Variables already exported in your shell —
+   `SHODAN_API_KEY=xxx python3 recon.py -d example.com` overrides the file for
+   one run
+2. The credential file
+3. Keys saved in the database through the Settings UI
+
+Use `--no-env-file` to ignore credential files entirely and run off the current
+environment. The same file is also read when the API is started directly
+(`cd backend && python3 -m uvicorn main:app`); under Docker, keep using
+Settings or `docker-compose.yml`.
 
 ---
 
@@ -334,6 +379,7 @@ shadow-grid/
 │                       live progress, interactive results (light/dark)
 ├── docker/             Dockerfile, docker-compose.yml, nginx.conf, entrypoint.sh
 ├── data/               wordlists, resolvers and other tool data
+├── .env.example        credential template for CLI runs (copy to .env)
 └── recon.py            CLI entry point (same engine as the web app)
 ```
 

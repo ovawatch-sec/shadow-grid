@@ -19,3 +19,9 @@
 **/*.pyc
 **/*[Ff]rontend/dist/
 .uv-cache/
+
+# Local credential files — never commit real API keys.
+# The committed template is .env.example.
+.env
+.env.*
+!.env.example
