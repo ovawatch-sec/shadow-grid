@@ -1,0 +1,14 @@
+# Keep credentials out of the build context. The image receives API keys at
+# runtime (Settings UI or docker-compose environment), never baked in.
+**/.env
+**/.env.*
+!**/.env.example
+
+# Host build artifacts — the image builds its own.
+**/node_modules
+frontend/dist/
+output/
+**/__pycache__/
+**/*.pyc
+.git/
+.uv-cache/

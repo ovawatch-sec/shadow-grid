@@ -28,5 +28,6 @@ async def save_tool_api_keys(
     existing = await storage.load_tool_api_keys()
     cfg = merge_tool_api_keys(existing, body.model_dump())
     await storage.save_tool_api_keys(cfg)
-    apply_tool_api_keys(cfg)
+    # An explicit save outranks any value loaded from a local .env file.
+    apply_tool_api_keys(cfg, respect_locks=False)
     return {"ok": True}

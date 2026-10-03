@@ -6,7 +6,7 @@ variables before tool availability checks and scan execution.
 from __future__ import annotations
 
 import os
-from typing import Any
+from typing import Any, Iterable
 
 MASK = "••••••••"
 
@@ -78,11 +78,42 @@ def mask_tool_api_keys(config: dict[str, Any] | None) -> dict[str, str]:
     return {key: (MASK if value else "") for key, value in clean.items()}
 
 
-def apply_tool_api_keys(config: dict[str, Any] | None) -> None:
+#: Variables supplied by a local credential file (see ``env_file``). Stored
+#: keys never overwrite these, so a CLI run stays bound to the file it loaded.
+_locked_env_keys: set[str] = set()
+
+
+def lock_env_keys(env_names: Iterable[str]) -> None:
+    """Protect externally supplied environment values from stored config."""
+    known = set(KEY_ENV_MAP.values())
+    _locked_env_keys.update(name for name in env_names if name in known)
+
+
+def locked_env_keys() -> frozenset[str]:
+    """Return the variables currently protected from stored-config overwrite."""
+    return frozenset(_locked_env_keys)
+
+
+def clear_locked_env_keys() -> None:
+    """Release every protected variable (used by the test suite)."""
+    _locked_env_keys.clear()
+
+
+def apply_tool_api_keys(config: dict[str, Any] | None, *, respect_locks: bool = True) -> None:
+    """Export stored keys to the process environment.
+
+    ``respect_locks`` keeps credentials loaded from a local file in place. An
+    explicit save from the Settings UI passes ``False`` so the operator's newest
+    value always takes effect in the running process.
+    """
     for key, env_name in KEY_ENV_MAP.items():
+        if respect_locks and env_name in _locked_env_keys:
+            continue
         value = str((config or {}).get(key, "") or "").strip()
         if value and value != MASK:
             os.environ[env_name] = value
+            if not respect_locks:
+                _locked_env_keys.discard(env_name)
 
 
 def has_any_ai_api_key(config: dict[str, Any] | None = None) -> bool:

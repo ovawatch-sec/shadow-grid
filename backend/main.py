@@ -15,6 +15,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from config import settings
+from env_file import load_env_file
 from storage import SqlStorage
 from tool_secrets import apply_tool_api_keys, normalize_tool_api_keys
 from models import ScanStatus
@@ -26,6 +27,16 @@ logging.basicConfig(
 )
 
 logger = logging.getLogger(__name__)
+
+# ── Local credential file ────────────────────────────────────────
+# Docker passes API keys as environment variables and the Settings UI stores
+# them in SQLite. A bare ``uvicorn main:app`` run has neither, so the same
+# .env file the CLI reads is loaded here. Real environment variables win.
+try:
+    _env_file = load_env_file()
+except (FileNotFoundError, OSError) as exc:
+    logger.warning("%s", exc)
+    _env_file = None
 
 # ── Global storage instance (singleton) ──────────────────────────
 storage = SqlStorage(settings.database_dir, output_dir=settings.output_dir)
@@ -44,7 +55,13 @@ async def lifespan(app: FastAPI):
         # Persist the current schema so removed provider credentials (such as
         # legacy Google CSE fields) do not remain dormant in SQLite.
         await storage.save_tool_api_keys(normalized_tool_keys)
+    # Stored keys fill the gaps; variables supplied by .env stay authoritative.
     apply_tool_api_keys(normalized_tool_keys)
+    if _env_file is not None and _env_file.loaded:
+        logger.info(
+            "Credential file %s supplied %d variable(s)",
+            _env_file.path, len(_env_file.applied),
+        )
 
     auth_record = await storage.load_auth()
     if auth_record.get("hash") and not await storage.get_control_record("user", "admin"):
