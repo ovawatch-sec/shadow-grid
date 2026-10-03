@@ -76,6 +76,7 @@ async def create_scan(body: ScanCreate, background_tasks: BackgroundTasks):
         verify_emails=body.verify_emails and "email_finder" in selected_tools,
         user_agent=body.user_agent,
         custom_headers=body.custom_headers,
+        credential_hosts=body.credential_hosts,
     )
     await storage.save_scan(scan)
 
@@ -163,6 +164,7 @@ async def retry_failed_tools(scan_id: str, background_tasks: BackgroundTasks):
             project_id=scan.project_id, tools=failed_tools,
             wordlist=scan.wordlist, verify_emails=scan.verify_emails,
             user_agent=scan.user_agent, custom_headers=scan.custom_headers,
+            credential_hosts=scan.credential_hosts,
         ),
         background_tasks,
     )

@@ -11,16 +11,23 @@ const DEFAULT_TOOLS = [
   'dnsx','dns_records','zone_transfer',
   'httpx','naabu','nuclei','cve_check','subdomain_takeover','wpscan','gowitness','whatweb',
   'waybackurls','gau','katana','urlfinder',
+  'api_spec','param_miner',
   'whois','asnmap','google_dorks'
 ];
+
+// Tools that send attack payloads. Never selected by default, and flagged in
+// the UI so enabling one is a deliberate act for an authorised target.
+const ACTIVE_TOOLS = new Set(['nuclei_dast','vhost']);
 
 const TOOL_GROUPS: Record<string, string[]> = {
   'Subdomain Enumeration': ['crtsh','assetfinder','subfinder','amass','shuffledns'],
   'DNS':                   ['dnsx','dns_records','zone_transfer'],
   'HTTP & Ports':          ['httpx','naabu'],
-  'Vulnerability':         ['nuclei','cve_check','subdomain_takeover','wpscan','secret_exposure','web_posture','origin_exposure'],
-  'Screenshots, Dorks & Tech': ['gowitness','whatweb','wafw00f','google_dorks'],
   'URL Discovery':         ['waybackurls','gau','katana','urlfinder','ffuf'],
+  'API & Parameters':      ['api_spec','param_miner'],
+  'Vulnerability':         ['nuclei','cve_check','subdomain_takeover','wpscan','secret_exposure','web_posture','origin_exposure'],
+  'Active Testing (sends payloads)': ['nuclei_dast','vhost'],
+  'Screenshots, Dorks & Tech': ['gowitness','whatweb','wafw00f','google_dorks'],
   'Asset Discovery':       ['whois','asnmap','shodan','email_finder'],
   'AI':                    ['ai_analysis'],
 };
@@ -172,6 +179,9 @@ interface CustomHeaderEntry { name: string; value: string; }
                     @if (t === 'email_finder' && !toolAvail(t)) {
                       <div class="ai-warning">Save a Hunter API key in Settings to enable email discovery.</div>
                     }
+                    @if (isActiveTool(t) && selectedTools.has(t)) {
+                      <div class="ai-warning">Active testing: {{t}} sends attack payloads. Only enable it for targets you are authorised to test actively.</div>
+                    }
                   }
                 </div>
               </div>
@@ -218,6 +228,18 @@ interface CustomHeaderEntry { name: string; value: string; }
               }
               @if (headerError()) { <div class="alert alert-danger">{{headerError()}}</div> }
               <span class="request-hint">Header values are masked in this form and redacted from tool logs and execution manifests. Host, Content-Length, User-Agent, and hop-by-hop headers are blocked.</span>
+              <div class="form-group">
+                <label class="form-label">Credential hosts</label>
+                <input class="form-input mono" [(ngModel)]="credentialHostsInput" placeholder="app.example.com, *.staging.example.com" />
+                <span class="request-hint">
+                  Credential-bearing headers (Authorization, Cookie, X-API-Key, and any header whose name implies a session)
+                  are sent <b>only</b> to these hosts. Leave empty and they are never sent — a discovered subdomain, or a
+                  direct-IP probe, never receives your session.
+                </span>
+                @if (hasCredentialHeaders() && !credentialHostsInput.trim()) {
+                  <div class="alert alert-warning">A credential header is set but no credential host is listed, so it will be withheld from every target.</div>
+                }
+              </div>
             </div>
           </div>
 
@@ -386,12 +408,32 @@ export class ProjectDetailComponent implements OnInit {
   scheduleInterval = 10080;
   userAgent = 'ShadowGrid/3.1';
   customHeaders: CustomHeaderEntry[] = [];
+  credentialHostsInput = '';
   headerError = signal('');
   selectedTools = new Set<string>(DEFAULT_TOOLS);
 
   inscope = computed(() => this.targets().filter((t: any) => !t.is_oos));
   oos     = computed(() => this.targets().filter((t: any) => t.is_oos));
   get toolGroupEntries() { return Object.entries(TOOL_GROUPS); }
+
+  isActiveTool(name: string): boolean { return ACTIVE_TOOLS.has(name); }
+
+  /** Hostnames the operator allowed credential headers to reach. */
+  credentialHosts(): string[] {
+    return this.credentialHostsInput
+      .split(/[\s,]+/)
+      .map(entry => entry.trim())
+      .filter(entry => entry.length > 0);
+  }
+
+  /** True when any configured header carries a session or API identity. */
+  hasCredentialHeaders(): boolean {
+    const hints = ['auth','token','session','cookie','secret','credential','apikey','api-key'];
+    return this.customHeaders.some(header => {
+      const name = (header.name || '').trim().toLowerCase();
+      return name.length > 0 && hints.some(hint => name.includes(hint));
+    });
+  }
 
   constructor(private route: ActivatedRoute, private api: ApiService, private router: Router) {}
 
@@ -482,6 +524,7 @@ export class ProjectDetailComponent implements OnInit {
       this.selectedTools.has('email_finder') && this.verifyEmails,
       this.userAgent.trim() || 'ShadowGrid/3.1',
       headers,
+      this.credentialHosts(),
     )
       .subscribe({
         next: scan => this.router.navigate(['/scan', scan.id, 'progress']),
@@ -498,6 +541,7 @@ export class ProjectDetailComponent implements OnInit {
       project.id, [...this.selectedTools], this.scheduleInterval,
       this.selectedTools.has('email_finder') && this.verifyEmails,
       this.userAgent.trim() || 'ShadowGrid/3.1', headers,
+      this.credentialHosts(),
     ).subscribe(schedule => this.schedules.update(rows => [...rows, schedule]));
   }
 

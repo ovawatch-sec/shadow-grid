@@ -19,7 +19,7 @@ class KatanaTool(BaseTool):
         command = [
             "katana", "-list", str(urls_file),
             "-jsl", "-jc", "-d", "3", "-silent", "-o", str(outfile),
-        ] + self._header_args()
+        ] + self._header_args(hosts=self._hosts_in(self._read_lines(urls_file)))
         result = await self._exec(command, timeout=900)
         raw = self._read_lines(outfile) or [l for l in result.stdout.splitlines() if l.strip().startswith("http")]
         # Re-probe crawled URLs so any that went dead mid/after crawl are removed.

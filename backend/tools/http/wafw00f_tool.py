@@ -28,7 +28,7 @@ class Wafw00fTool(BaseTool):
             output = out_dir / f"wafw00f_{index}.json"
             command = [
                 "wafw00f", url, "-f", "json", "-o", str(output), "-a",
-            ] + self._header_args()
+            ] + self._header_args(hosts=[self._host_of(url)])
             result = await self._exec(command, timeout=45)
             if output.is_file():
                 try:

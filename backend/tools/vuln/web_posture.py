@@ -42,7 +42,10 @@ class WebPostureTool(BaseTool):
                 try:
                     async with session.get(
                         url, allow_redirects=True,
-                        headers={"Origin": "https://shadowgrid.invalid"},
+                        headers={
+                            **self._headers_for_host(self._host_of(url)),
+                            "Origin": "https://shadowgrid.invalid",
+                        },
                     ) as response:
                         headers = {key.lower(): value for key, value in response.headers.items()}
                         final_url = str(response.url)
@@ -69,10 +72,9 @@ class WebPostureTool(BaseTool):
                     return
 
         connector = aiohttp.TCPConnector(ssl=False)
-        async with aiohttp.ClientSession(
-            timeout=timeout, connector=connector,
-            headers=dict(extra.get("request_headers") or {}),
-        ) as session:
+        # Headers are attached per request: credential headers must never be
+        # session-wide when the URL list spans many discovered hosts.
+        async with aiohttp.ClientSession(timeout=timeout, connector=connector) as session:
             await asyncio.gather(*(inspect(url, session) for url in urls))
         serialized = json.dumps(findings)
         (out_dir / "web_posture.json").write_text(serialized, encoding="utf-8")

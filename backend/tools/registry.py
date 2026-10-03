@@ -20,8 +20,11 @@ from tools.http.httpx_tool       import HttpxTool
 from tools.http.naabu            import NaabuTool
 from tools.http.tlsx_tool        import TlsxTool
 from tools.http.ffuf_tool        import FfufTool
+from tools.http.api_spec         import ApiSpecTool
+from tools.http.vhost            import VhostTool
 from tools.http.wafw00f_tool     import Wafw00fTool
 from tools.vuln.nuclei           import NucleiTool
+from tools.vuln.nuclei_dast      import NucleiDastTool
 from tools.vuln.cve_check        import CveCheckTool
 from tools.vuln.secret_exposure  import SecretExposureTool
 from tools.vuln.web_posture      import WebPostureTool
@@ -34,6 +37,7 @@ from tools.urls.waybackurls      import WaybackUrlsTool
 from tools.urls.gau              import GauTool
 from tools.urls.katana           import KatanaTool
 from tools.urls.urlfinder        import UrlFinderTool
+from tools.urls.param_miner      import ParamMinerTool
 from tools.asset.whois_tool      import WhoisTool
 from tools.asset.asnmap_tool     import AsnmapTool
 from tools.asset.shodan_tool     import ShodanTool
@@ -61,8 +65,13 @@ REGISTRY: dict[str, type[BaseTool]] = {
     "tlsx":         TlsxTool,
     "ffuf":         FfufTool,
     "wafw00f":      Wafw00fTool,
+    "vhost":        VhostTool,
+    # API & parameter analysis
+    "api_spec":     ApiSpecTool,
+    "param_miner":  ParamMinerTool,
     # Vulnerability scanning
     "nuclei":       NucleiTool,
+    "nuclei_dast":  NucleiDastTool,
     "cve_check":    CveCheckTool,
     "secret_exposure": SecretExposureTool,
     "web_posture":  WebPostureTool,
@@ -111,5 +120,20 @@ def list_tools() -> list[dict]:
             "parallel_group": cls.parallel_group,
             "requires_root": cls.requires_root,
             "binary_name": binary_name,
+            "opt_in": bool(getattr(cls, "opt_in", False)),
         })
     return result
+
+
+def default_tools() -> list[str]:
+    """Every tool that may run without being named explicitly.
+
+    Active-testing tools send payloads at the target, so they are excluded:
+    a bare "run everything" must never start fuzzing on its own.
+    """
+    return [name for name, cls in REGISTRY.items() if not getattr(cls, "opt_in", False)]
+
+
+def opt_in_tools() -> list[str]:
+    """Tools that only run when selected by name."""
+    return [name for name, cls in REGISTRY.items() if getattr(cls, "opt_in", False)]

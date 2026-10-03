@@ -33,7 +33,7 @@ from models import Scan, ScanStatus, new_id
 from storage import SqlStorage
 from scan_engine import run_scan
 from tool_secrets import KEY_ENV_MAP, MASK
-from tools.registry import REGISTRY, get_tool
+from tools.registry import REGISTRY, default_tools, get_tool, opt_in_tools
 
 PASSIVE_TOOLS = [
     "crtsh","assetfinder","subfinder","amass",
@@ -175,11 +175,23 @@ async def main():
 
     # ── Resolve tool list ────────────────────────────────────────
     if args.tools:
-        tools = [t.strip() for t in args.tools.split(",")]
+        tools = [t.strip() for t in args.tools.split(",") if t.strip()]
     elif args.passive_only:
         tools = PASSIVE_TOOLS
     else:
-        tools = list(REGISTRY.keys())
+        # Active-testing tools send payloads at the target, so a bare run never
+        # includes them — they must be named explicitly with --tools.
+        tools = default_tools()
+
+    unknown = [name for name in tools if name not in REGISTRY]
+    if unknown:
+        parser.error(f"Unknown tool(s): {', '.join(unknown)}")
+
+    active = [name for name in tools if name in set(opt_in_tools())]
+    if active:
+        print(f"\n{YELLOW}[!]{RESET} Active testing enabled: {', '.join(active)}")
+        print(f"{DIM}      These send attack payloads. Only run them against targets you are")
+        print(f"      explicitly authorised to test actively.{RESET}")
 
     output_dir.mkdir(parents=True, exist_ok=True)
     data_dir.mkdir(parents=True, exist_ok=True)

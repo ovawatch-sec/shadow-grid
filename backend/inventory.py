@@ -22,6 +22,8 @@ class AssetType(str, Enum):
     HOSTNAME = "hostname"
     IP_ADDRESS = "ip_address"
     URL = "url"
+    ENDPOINT = "endpoint"
+    PARAMETER = "parameter"
     SERVICE = "service"
     TECHNOLOGY = "technology"
     EMAIL = "email"
@@ -259,6 +261,46 @@ def build_inventory(scan_id: str, project_id: str, roots: Iterable[str],
                     observe(service_asset, result.tool, state, row)
                     relate(service_asset, host_asset, "runs_on", result.tool)
 
+            endpoint_value = str(row.get("endpoint") or "").strip()
+            endpoint_asset = None
+            if endpoint_value:
+                method = str(row.get("method") or "GET").strip().upper()[:12] or "GET"
+                endpoint_asset = upsert_asset(
+                    AssetType.ENDPOINT, f"{method} {endpoint_value}", result.tool, state,
+                    {
+                        "method": method,
+                        "param_count": row.get("param_count"),
+                        "risk_hints": row.get("risk_hints") or [],
+                        "requires_auth": row.get("requires_auth"),
+                        "spec_url": row.get("spec_url", ""),
+                        "observed_urls": row.get("observed_urls"),
+                    },
+                )
+                observe(endpoint_asset, result.tool, state, row)
+                endpoint_host = _canonical_host(endpoint_value)
+                if endpoint_host:
+                    endpoint_host_asset = upsert_asset(
+                        AssetType.HOSTNAME, endpoint_host, result.tool, state,
+                    )
+                    relate(endpoint_asset, endpoint_host_asset, "served_by", result.tool)
+                    host_asset = host_asset or endpoint_host_asset
+                if url_asset:
+                    relate(url_asset, endpoint_asset, "instance_of", result.tool)
+
+            parameters = row.get("params") or row.get("parameters") or []
+            if isinstance(parameters, str):
+                parameters = [parameters]
+            if endpoint_asset and isinstance(parameters, list):
+                for parameter in parameters[:100]:
+                    name = str(parameter).strip()
+                    if not name:
+                        continue
+                    parameter_asset = upsert_asset(
+                        AssetType.PARAMETER, f"{endpoint_value}?{name}", result.tool,
+                        "parameter_observed", {"name": name, "endpoint": endpoint_value},
+                    )
+                    relate(endpoint_asset, parameter_asset, "accepts_parameter", result.tool)
+
             technologies = row.get("tech") or row.get("technologies") or []
             if isinstance(technologies, str):
                 technologies = [technologies]
@@ -310,7 +352,7 @@ def build_inventory(scan_id: str, project_id: str, roots: Iterable[str],
                     )
 
             if result.category in {ToolCategory.VULN, ToolCategory.WORDPRESS}:
-                affected = url_asset or host_asset or root_asset
+                affected = url_asset or endpoint_asset or host_asset or root_asset
                 if affected:
                     title = str(row.get("name") or row.get("title") or row.get("template_id") or result.tool)
                     identity = str(row.get("template_id") or row.get("id") or title)

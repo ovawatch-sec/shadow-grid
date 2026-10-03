@@ -21,11 +21,12 @@ import shutil
 import time
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 from urllib.parse import urlparse
 
 import process_registry
 from models import ToolCategory, ToolResult
+from request_config import headers_for_host, host_allows_credentials
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +61,9 @@ class BaseTool(ABC):
     description: str = ""
     requires_root: bool = False
     parallel_group: str = ""   # tools with the same group run in parallel
+    # Active-testing tools are never included in an "all tools" selection: they
+    # send payloads and must be chosen deliberately for an authorised target.
+    opt_in: bool = False
 
     def __init__(self, output_dir: Path, data_dir: Path):
         self.output_dir = output_dir
@@ -102,7 +106,12 @@ class BaseTool(ABC):
         # Expose the scan id to the subprocess helpers so spawned tool processes
         # can be registered for cancellation.
         self._scan_id = scan_id
+        # Broadcast-safe headers go to every target. Credential headers are
+        # attached per host, only for hosts the operator explicitly allowed.
         self._request_headers = dict((extra or {}).get("request_headers") or {})
+        self._credential_headers = dict((extra or {}).get("credential_headers") or {})
+        self._credential_hosts = list((extra or {}).get("credential_hosts") or [])
+        self._credentials_withheld = False
 
         domain_out = self.output_dir / domain
         domain_out.mkdir(parents=True, exist_ok=True)
@@ -137,6 +146,7 @@ class BaseTool(ABC):
         return ToolResult(
             scan_id=scan_id, project_id=project_id,
             tool=self.name, category=self.category, domain=domain,
+            notice=self._credential_note(),
             data=data, count=len(data), elapsed_s=round(elapsed, 2),
             error=error,
         )
@@ -182,17 +192,73 @@ class BaseTool(ABC):
                 hide_next = item in sensitive_flags
         return redacted
 
-    def _header_args(self, flag: str = "-H") -> list[str]:
-        """Return repeated CLI header arguments for the current assessment."""
+    def _header_args(self, flag: str = "-H", hosts: Iterable[str] | None = None) -> list[str]:
+        """Return repeated CLI header arguments for the current assessment.
+
+        A list-driven binary sends one header set to every target it is given,
+        so credential headers are included only when ``hosts`` is supplied and
+        every one of those hosts is on the operator's allowlist. Callers that
+        cannot name their targets get broadcast-safe headers only — a session
+        token is never sprayed across a discovered host list.
+        """
+        headers = dict(getattr(self, "_request_headers", {}))
+        credentials = getattr(self, "_credential_headers", {})
+        if credentials and hosts is not None:
+            allowlist = getattr(self, "_credential_hosts", [])
+            targets = [host for host in hosts if host]
+            if targets and all(host_allows_credentials(host, allowlist) for host in targets):
+                headers.update(credentials)
+            else:
+                self._credentials_withheld = True
+        elif credentials:
+            self._credentials_withheld = True
         args: list[str] = []
-        for name, value in getattr(self, "_request_headers", {}).items():
+        for name, value in headers.items():
             args.extend([flag, f"{name}: {value}"])
         return args
+
+    def _headers_for_host(self, host: str | None) -> dict[str, str]:
+        """Return the header set for a single host, including allowed credentials."""
+        return headers_for_host(
+            getattr(self, "_request_headers", {}),
+            getattr(self, "_credential_headers", {}),
+            host,
+            getattr(self, "_credential_hosts", []),
+        )
+
+    @staticmethod
+    def _host_of(value: str) -> str:
+        """Return the lowercase hostname of a URL or host:port string."""
+        candidate = (value or "").strip()
+        if not candidate:
+            return ""
+        if "://" in candidate:
+            return (urlparse(candidate).hostname or "").lower()
+        candidate = candidate.split("/", 1)[0]
+        if candidate.count(":") == 1 and not candidate.endswith(":"):
+            candidate = candidate.rsplit(":", 1)[0]
+        return candidate.strip("[]").lower()
+
+    def _hosts_in(self, values: Iterable[str]) -> list[str]:
+        """Return the unique hostnames covered by a list of URLs or hosts."""
+        return list(dict.fromkeys(filter(None, (self._host_of(value) for value in values))))
+
+    def _credential_note(self) -> str:
+        """Describe withheld credentials so a degraded auth run is never silent."""
+        if not getattr(self, "_credentials_withheld", False):
+            return ""
+        return (
+            "Credential headers were withheld: one or more targets are outside the "
+            "scan's credential_hosts allowlist"
+        )
 
     def _redact_sensitive_text(self, value: str) -> str:
         """Remove configured header values from persisted tool error messages."""
         redacted = value
-        for header_value in getattr(self, "_request_headers", {}).values():
+        for header_value in (
+            *getattr(self, "_request_headers", {}).values(),
+            *getattr(self, "_credential_headers", {}).values(),
+        ):
             if header_value:
                 redacted = redacted.replace(header_value, "<redacted>")
         return redacted
@@ -281,7 +347,7 @@ class BaseTool(ABC):
                 prober, "-silent", "-json", "-no-color",
                 "-list", str(probe_in),
                 "-timeout", "8", "-retries", "0", "-threads", "60",
-            ] + self._header_args()
+            ] + self._header_args(hosts=self._hosts_in(unique))
             result = await self._exec(command, timeout=timeout)
         except Exception:
             logger.exception("[%s] URL validation prober failed — keeping unvalidated URLs", self.name)

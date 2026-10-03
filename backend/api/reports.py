@@ -5,6 +5,7 @@ import csv
 import html
 import io
 import json
+from urllib.parse import parse_qsl, urlsplit
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import Response
@@ -49,13 +50,96 @@ async def attack_surface_graph(scan_id: str):
     }
 
 
+def _target_urls(snapshot) -> list[str]:
+    """Return every reachable URL and documented endpoint, deduplicated."""
+    urls: dict[str, None] = {}
+    for asset in snapshot.assets:
+        if asset.type.value == "url":
+            urls.setdefault(asset.value, None)
+        elif asset.type.value == "endpoint":
+            # Endpoint assets are stored as "METHOD url".
+            _, _, location = asset.value.partition(" ")
+            if location.startswith(("http://", "https://")):
+                urls.setdefault(location, None)
+    return list(urls)
+
+
+def _har_document(name: str, snapshot) -> dict:
+    """Build a HAR 1.2 log of the discovered surface for replay tooling."""
+    entries = []
+    for asset in snapshot.assets:
+        if asset.type.value == "endpoint":
+            method, _, location = asset.value.partition(" ")
+        elif asset.type.value == "url":
+            method, location = "GET", asset.value
+        else:
+            continue
+        if not location.startswith(("http://", "https://")):
+            continue
+        parsed = urlsplit(location)
+        entries.append({
+            "startedDateTime": asset.last_seen.isoformat(),
+            "time": 0,
+            "request": {
+                "method": (method or "GET").upper(),
+                "url": location,
+                "httpVersion": "HTTP/1.1",
+                "cookies": [],
+                "headers": [{"name": "Host", "value": parsed.netloc}],
+                "queryString": [
+                    {"name": key, "value": value}
+                    for key, value in parse_qsl(parsed.query, keep_blank_values=True)
+                ],
+                "headersSize": -1,
+                "bodySize": -1,
+            },
+            # ShadowGrid records the surface, not captured traffic: responses
+            # are intentionally empty so an importer treats these as requests
+            # to replay rather than as evidence of a prior exchange.
+            "response": {
+                "status": 0, "statusText": "", "httpVersion": "HTTP/1.1",
+                "cookies": [], "headers": [],
+                "content": {"size": 0, "mimeType": ""},
+                "redirectURL": "", "headersSize": -1, "bodySize": -1,
+            },
+            "cache": {},
+            "timings": {"send": 0, "wait": 0, "receive": 0},
+            "comment": ", ".join(asset.sources),
+        })
+    return {
+        "log": {
+            "version": "1.2",
+            "creator": {"name": "ShadowGrid", "version": "3.1"},
+            "comment": f"Discovered attack surface for {name}",
+            "entries": entries,
+        }
+    }
+
+
 @router.get("/{scan_id}/export")
-async def export_report(scan_id: str, format: str = Query("html", pattern="^(html|markdown|csv|json|sarif)$")):
+async def export_report(
+    scan_id: str,
+    format: str = Query("html", pattern="^(html|markdown|csv|json|sarif|targets|har)$"),
+):
     """Export an assessment without relying on commercial report services."""
     project, scan, snapshot = await _snapshot(scan_id)
     name = project.name if project else scan.project_id
     findings = [finding.model_dump(mode="json") for finding in snapshot.findings]
     assets = [asset.model_dump(mode="json") for asset in snapshot.assets]
+    if format == "targets":
+        # A plain URL list is what Burp, Caido, and ZAP import directly, so
+        # recon hands straight over to manual testing.
+        return Response(
+            "\n".join(_target_urls(snapshot)) + "\n",
+            media_type="text/plain",
+            headers={"Content-Disposition": f'attachment; filename="shadowgrid-{scan_id}-targets.txt"'},
+        )
+    if format == "har":
+        return Response(
+            json.dumps(_har_document(name, snapshot), indent=2),
+            media_type="application/json",
+            headers={"Content-Disposition": f'attachment; filename="shadowgrid-{scan_id}.har"'},
+        )
     if format == "json":
         return Response(
             json.dumps({
