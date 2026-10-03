@@ -51,7 +51,11 @@ class OriginExposureTool(BaseTool):
         timeout = aiohttp.ClientTimeout(total=15)
 
         async def fetch(session: aiohttp.ClientSession, url: str, host: str | None = None):
-            headers = {"Host": host} if host else {}
+            # Credentials follow the *presented* host: a direct-IP probe only
+            # carries them when that IP is itself on the allowlist.
+            headers = dict(self._headers_for_host(host or self._host_of(url)))
+            if host:
+                headers["Host"] = host
             async with session.get(url, headers=headers, allow_redirects=False) as response:
                 body = (await response.content.read(500_000)).decode(errors="replace")
                 title_match = TITLE_RE.search(body)
@@ -84,10 +88,7 @@ class OriginExposureTool(BaseTool):
                     return
 
         connector = aiohttp.TCPConnector(ssl=False)
-        async with aiohttp.ClientSession(
-            timeout=timeout, connector=connector,
-            headers=dict(extra.get("request_headers") or {}),
-        ) as session:
+        async with aiohttp.ClientSession(timeout=timeout, connector=connector) as session:
             await asyncio.gather(*(inspect(url, ip, session) for url, ip in candidates[:150]))
         serialized = json.dumps(findings)
         (out_dir / "origin_exposure.json").write_text(serialized, encoding="utf-8")

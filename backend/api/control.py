@@ -37,6 +37,7 @@ class ScheduleCreate(BaseModel):
     verify_emails: bool = False
     user_agent: str = DEFAULT_USER_AGENT
     custom_headers: dict[str, str] = Field(default_factory=dict)
+    credential_hosts: list[str] = Field(default_factory=list)
 
 
 @router.get("/schedules")

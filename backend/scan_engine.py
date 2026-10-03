@@ -29,7 +29,7 @@ from tool_secrets import apply_tool_api_keys
 from scope import scan_workspace, scope_fingerprint
 from config import settings
 from inventory import build_inventory
-from request_config import target_request_headers
+from request_config import split_credential_headers, target_request_headers
 
 logger = logging.getLogger(__name__)
 
@@ -48,8 +48,12 @@ PHASES: list[dict[str, object]] = [
     {"index": 2, "name": "Subdomain Enumeration", "tools": ["crtsh", "assetfinder", "subfinder", "amass", "shuffledns"]},
     {"index": 3, "name": "DNS Resolution", "tools": ["dnsx", "dns_records", "zone_transfer"]},
     {"index": 4, "name": "HTTP, TLS & Port Validation", "tools": ["httpx", "tlsx", "naabu"]},
-    {"index": 5, "name": "URL Discovery", "tools": ["waybackurls", "gau", "katana", "urlfinder", "ffuf"]},
-    {"index": 6, "name": "Vulnerability Scan, Takeovers, Screenshots, Dorks & AI", "tools": ["google_dorks", "nuclei", "cve_check", "subdomain_takeover", "wpscan", "gowitness", "whatweb", "wafw00f", "secret_exposure", "web_posture", "origin_exposure", "ai_analysis"]},
+    {"index": 5, "name": "URL Discovery", "tools": ["waybackurls", "gau", "katana", "urlfinder", "ffuf", "vhost"]},
+    # Endpoint and parameter analysis runs after URL discovery because it
+    # consumes those outputs, and before scanning so the vulnerability phase
+    # can target a deduplicated parameter surface instead of raw URLs.
+    {"index": 6, "name": "API & Parameter Analysis", "tools": ["api_spec", "param_miner"]},
+    {"index": 7, "name": "Vulnerability Scan, Takeovers, Screenshots, Dorks & AI", "tools": ["google_dorks", "nuclei", "nuclei_dast", "cve_check", "subdomain_takeover", "wpscan", "gowitness", "whatweb", "wafw00f", "secret_exposure", "web_posture", "origin_exposure", "ai_analysis"]},
 ]
 
 SUBDOMAIN_FILES = (
@@ -411,6 +415,19 @@ def _write_alive_urls(domain: str, http_results: list[ToolResult | None], output
     return out, len(urls)
 
 
+def _tool_extra(scan: Scan) -> dict[str, object]:
+    """Build the per-run extras, keeping credentials separate from safe headers."""
+    safe, credentials = split_credential_headers(
+        target_request_headers(scan.user_agent, scan.custom_headers)
+    )
+    return {
+        "verify_emails": scan.verify_emails,
+        "request_headers": safe,
+        "credential_headers": credentials,
+        "credential_hosts": list(scan.credential_hosts),
+    }
+
+
 async def _run_tool(
     tool_name: str,
     domain: str,
@@ -489,10 +506,7 @@ async def _run_tool(
     try:
         result = await tool.execute(
             domain, scan.id, scan.project_id, oos, wordlist,
-            extra={
-                "verify_emails": scan.verify_emails,
-                "request_headers": target_request_headers(scan.user_agent, scan.custom_headers),
-            },
+            extra=_tool_extra(scan),
         )
         from evidence import persist_result_evidence
         await persist_result_evidence(result, output_dir, storage)
@@ -509,8 +523,11 @@ async def _run_tool(
                 overall_total_tools=overall_total_tools,
             )
         else:
+            message = f"{result.count} results"
+            if result.notice:
+                message = f"{message} — {result.notice}"
             await _emit(
-                scan, storage, tool_name, "done", f"{result.count} results", result.count,
+                scan, storage, tool_name, "done", message, result.count,
                 domain=domain, phase=phase, phase_index=phase_index,
                 completed_tools=completed_tools_ref["value"], total_tools=total_tools,
                 overall_completed_tools=overall_completed_tools_ref["value"],

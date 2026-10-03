@@ -10,7 +10,12 @@ from typing import Any, Optional
 from pydantic import BaseModel, Field, field_validator
 
 from scope import normalize_domain
-from request_config import DEFAULT_USER_AGENT, validate_custom_headers, validate_user_agent
+from request_config import (
+    DEFAULT_USER_AGENT,
+    validate_credential_hosts,
+    validate_custom_headers,
+    validate_user_agent,
+)
 
 
 def now_utc() -> datetime:
@@ -187,9 +192,13 @@ class ScanCreate(BaseModel):
     verify_emails: bool = False
     user_agent: str = DEFAULT_USER_AGENT
     custom_headers: dict[str, str] = Field(default_factory=dict)
+    # Credential-bearing headers (Authorization, Cookie, X-API-Key, …) are sent
+    # only to these hosts. Empty means they are never sent anywhere.
+    credential_hosts: list[str] = Field(default_factory=list)
 
     _validate_user_agent = field_validator("user_agent")(validate_user_agent)
     _validate_custom_headers = field_validator("custom_headers")(validate_custom_headers)
+    _validate_credential_hosts = field_validator("credential_hosts")(validate_credential_hosts)
 
 
 class ScanProgress(BaseModel):
@@ -226,9 +235,11 @@ class Scan(BaseModel):
     verify_emails: bool = False
     user_agent: str = DEFAULT_USER_AGENT
     custom_headers: dict[str, str] = Field(default_factory=dict)
+    credential_hosts: list[str] = Field(default_factory=list)
 
     _validate_user_agent = field_validator("user_agent")(validate_user_agent)
     _validate_custom_headers = field_validator("custom_headers")(validate_custom_headers)
+    _validate_credential_hosts = field_validator("credential_hosts")(validate_credential_hosts)
 
     def to_table_entity(self) -> dict:
         import json
@@ -248,6 +259,7 @@ class Scan(BaseModel):
             "verify_emails": self.verify_emails,
             "user_agent": self.user_agent,
             "custom_headers": json.dumps(self.custom_headers),
+            "credential_hosts": json.dumps(self.credential_hosts),
         }
 
     @staticmethod
@@ -272,6 +284,7 @@ class Scan(BaseModel):
             verify_emails=bool(e.get("verify_emails", False)),
             user_agent=e.get("user_agent") or DEFAULT_USER_AGENT,
             custom_headers=json.loads(e.get("custom_headers", "{}")),
+            credential_hosts=json.loads(e.get("credential_hosts", "[]")),
         )
 
 
@@ -297,6 +310,9 @@ class ToolResult(BaseModel):
     elapsed_s: float = 0.0
     created_at: datetime = Field(default_factory=now_utc)
     error: str = ""
+    # Operational note for a run that succeeded but behaved differently than
+    # configured — e.g. credential headers withheld from out-of-allowlist hosts.
+    notice: str = ""
 
     def model_post_init(self, __context: Any) -> None:
         if not self.count:

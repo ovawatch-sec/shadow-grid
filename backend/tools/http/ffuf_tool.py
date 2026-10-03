@@ -10,6 +10,11 @@ from models import ToolCategory
 from tools.base import BaseTool, RunResult
 
 
+#: Extensions appended to every candidate path. Each one multiplies the
+#: request count, so the list stays short and high-signal.
+EXTENSIONS = (".bak", ".old", ".zip", ".sql")
+
+
 class FfufTool(BaseTool):
     """Run a conservative ffuf pass against each verified service root."""
 
@@ -37,10 +42,13 @@ class FfufTool(BaseTool):
             output = out_dir / f"ffuf_{index}.json"
             command = [
                 "ffuf", "-u", f"{base}/FUZZ", "-w", str(content_wordlist),
+                # Backup and config copies of a known path are the highest-value
+                # content-discovery hits, so each word is also tried with them.
+                "-e", ",".join(EXTENSIONS),
                 "-of", "json", "-o", str(output), "-ac", "-mc", "all",
                 "-fc", "404", "-rate", "25", "-t", "10", "-timeout", "8",
-                "-maxtime", "120", "-noninteractive", "-s",
-            ] + self._header_args()
+                "-maxtime", "180", "-noninteractive", "-s",
+            ] + self._header_args(hosts=[self._host_of(base)])
             result = await self._exec(command, timeout=150)
             if output.is_file():
                 try:

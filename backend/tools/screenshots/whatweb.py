@@ -20,7 +20,7 @@ class WhatWebTool(BaseTool):
         command = [
             "whatweb", "--input-file", str(urls_file),
             "--log-json", str(outfile), "--quiet", "--no-errors",
-        ] + self._header_args("--header")
+        ] + self._header_args("--header", hosts=self._hosts_in(self._read_lines(urls_file)))
         return await self._exec(command, timeout=600)
 
     def parse(self, result: RunResult, domain: str) -> list[dict[str, Any]]:

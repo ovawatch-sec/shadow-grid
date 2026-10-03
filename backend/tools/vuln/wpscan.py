@@ -96,7 +96,7 @@ class WpscanTool(BaseTool):
                 "--force", "--plugins-detection", "passive",
                 "--enumerate", "vp,vt,dbe,u",
             ]
-            request_headers = dict(extra.get("request_headers") or {})
+            request_headers = dict(self._headers_for_host(self._host_of(url)))
             user_agent = request_headers.pop("User-Agent", "ShadowGrid/3.1")
             cmd += ["--user-agent", user_agent]
             if request_headers:

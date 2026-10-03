@@ -20,7 +20,13 @@
 
 **ShadowGrid** is a full-stack **application-security (AppSec) platform**. It turns 20+ best-in-class open-source security tools into a single, phased, parallelised assessment pipeline behind a modern SaaS-style web app — with a posture dashboard, cross-program scan activity, and a unified findings view.
 
-You organise work into **programs** (an application and its in-scope / out-of-scope scope), then launch **assessments** against them. Each assessment walks six deterministic phases — asset discovery, subdomain enumeration, DNS resolution, HTTP probing & port scanning, URL discovery, and vulnerability scanning / WordPress / screenshots / dorking / AI analysis — running independent tools in parallel, streaming **live progress over SSE**, and collecting every finding into one dashboard.
+You organise work into **programs** (an application and its in-scope / out-of-scope scope), then launch **assessments** against them. Each assessment walks seven deterministic phases — asset discovery, subdomain enumeration, DNS resolution, HTTP probing & port scanning, URL discovery, API & parameter analysis, and vulnerability scanning / WordPress / screenshots / dorking / AI analysis — running independent tools in parallel, streaming **live progress over SSE**, and collecting every finding into one dashboard.
+
+The pipeline does not stop at a URL list. Phase 6 collapses discovered URLs into
+endpoint patterns with their parameter sets, reads any OpenAPI specification or
+introspectable GraphQL schema the target exposes, and hands phase 7 — and you, in
+Burp or Caido — a deduplicated **parameter-level** test surface. Payload-sending
+tools exist (`nuclei_dast`, `vhost`) but are strictly opt-in.
 
 It's built for **security teams, penetration testers, and bug-bounty hunters** who want repeatable, resumable, trackable AppSec assessments without hand-wiring a dozen CLIs and reconciling their output by hand. (Attack-surface / asset enumeration is one phase of the pipeline — not the whole product.)
 
@@ -39,7 +45,9 @@ It's built for **security teams, penetration testers, and bug-bounty hunters** w
 - **Scope-aware** — out-of-scope patterns (incl. wildcards) are filtered at every stage, so results stay inside your authorisation.
 - **Assessment request identity** — every assessment uses `ShadowGrid/3.1` by
   default and can define a custom User-Agent plus validated headers for
-  authenticated target testing. Header values are redacted from logs and manifests.
+  authenticated target testing. Header values are redacted from logs and manifests,
+  and credential-bearing headers are **bound to an explicit host allowlist** so a
+  session token is never sprayed across discovered hosts.
 - **SQL-first persistence** — mandatory local SQLite storage with transactions,
   foreign keys, WAL concurrency, and automatic migration from legacy JSON metadata.
 - **Continuous monitoring** — durable daily, weekly, or monthly schedules,
@@ -101,10 +109,70 @@ assessment. The same data is available from:
 - `GET /api/inventory/{scan-id}`
 - `GET /api/inventory/{scan-id}/delta`
 
+Assets are typed: `domain`, `hostname`, `ip_address`, `url`, **`endpoint`**,
+**`parameter`**, `service`, `technology`, and `email`. An endpoint is stored as
+`METHOD url` with its parameter set, risk hints, and declared auth requirement,
+and relates to the parameters it accepts (`accepts_parameter`), the host serving
+it (`served_by`), and the concrete URLs observed for it (`instance_of`). That is
+what lets a finding hang off `POST /api/orders` rather than off a bare hostname.
+
+### Handing off to manual testing
+
+Recon ends where manual testing starts, so the discovered surface exports in
+formats those tools import directly:
+
+| Format | Endpoint | Use |
+|--------|----------|-----|
+| `targets` | `GET /api/reports/{scan-id}/export?format=targets` | Plain URL list for Burp, Caido, or ZAP |
+| `har` | `GET /api/reports/{scan-id}/export?format=har` | HAR 1.2 of every URL and documented endpoint, with method and query string, for replay tooling |
+
+Both are also buttons on the results page, alongside HTML / Markdown / CSV /
+JSON / SARIF. HAR responses are intentionally empty: these are requests to
+replay, not captured traffic.
+
 Each completed scan also writes a hashed `_manifest.json` beside its evidence.
 Container readiness is exposed at `GET /api/ready`; authenticated request metrics
 are available in Prometheus text format at `GET /api/metrics`. All of these
 features are local and require no commercial account or subscription.
+
+### Authenticated scanning and credential scoping
+
+Most real AppSec bugs live behind a login, so an assessment can carry
+`Authorization`, `Cookie`, `X-API-Key`, or any custom header. Those headers are
+treated differently from the rest:
+
+- A header is classified as **credential-bearing** when its name is a known
+  identity header or contains `auth`, `token`, `session`, `cookie`, `secret`,
+  `credential`, or `api-key` — so `X-Acme-Session` is caught too.
+- Credential headers are sent **only** to hosts listed in the assessment's
+  **Credential hosts** field (exact names or `*.example.com` wildcards).
+- **An empty allowlist means they are never sent.** Credentials are opt-in per
+  target, never implied by scope membership.
+- A raw IP is matched only exactly, so `origin_exposure`'s direct-IP probes
+  cannot inherit a hostname's session.
+- A tool that cannot name its targets gets broadcast-safe headers only. When a
+  list-driven binary (nuclei, katana, httpx) is handed any host outside the
+  allowlist, credentials are withheld from that run and the assessment reports
+  it in progress — a degraded authenticated run is never silent.
+
+Why it matters: without this, a 200-subdomain authenticated scan hands a live
+session token to all 200 hosts — including one that `subdomain_takeover` has
+just flagged as claimable by somebody else.
+
+Set it in the web UI next to the custom headers, or via the API:
+
+```jsonc
+POST /api/scans/
+{
+  "project_id": "…",
+  "tools": ["httpx", "katana", "param_miner"],
+  "custom_headers": { "Cookie": "session=…" },
+  "credential_hosts": ["app.example.com", "*.staging.example.com"]
+}
+```
+
+Schedules carry the same field, so a recurring authenticated assessment keeps
+its scoping.
 
 ### Accessing ShadowGrid from a VM host
 
@@ -178,10 +246,19 @@ The whole stack ships as a **single container** — Angular build, FastAPI backe
 | 2 — Subdomain Enumeration | `crtsh`, `assetfinder`, `subfinder`, `amass`, `shuffledns` | **all parallel** |
 | 3 — DNS Resolution | `dnsx`, `dns_records`, `zone_transfer` | parallel |
 | 4 — HTTP, TLS & Port Validation | `httpx`, `tlsx`, `naabu` | parallel |
-| 5 — URL Discovery | `waybackurls`, `gau`, `katana`, `urlfinder` | **all parallel** (URLs are re-probed; dead links dropped) |
-| 6 — Vuln · CVE · Takeover · WordPress · Screenshots · Dorks · AI | `nuclei`, `cve_check`, `subdomain_takeover`, `wpscan`, `gowitness`, `whatweb`, `google_dorks`, `ai_analysis` | parallel (AI runs last) |
+| 5 — URL Discovery | `waybackurls`, `gau`, `katana`, `urlfinder`, opt-in `ffuf`, opt-in `vhost` | **all parallel** (URLs are re-probed; dead links dropped) |
+| 6 — API & Parameter Analysis | `api_spec`, `param_miner` | parallel |
+| 7 — Vuln · CVE · Takeover · WordPress · Screenshots · Dorks · AI | `nuclei`, `cve_check`, `subdomain_takeover`, `wpscan`, `gowitness`, `whatweb`, `google_dorks`, opt-in `nuclei_dast`, `ai_analysis` | parallel (AI runs last) |
 
-Between phases, ShadowGrid writes canonical hand-off artifacts — `subdomains_merged.txt` → `resolved_subdomains.txt` / `probe_candidates.txt` → `alive_urls.txt`. Unresolved fallback candidates are never presented as alive; HTTP/TLS tools validate candidates and record explicit reachability states.
+Between phases, ShadowGrid writes canonical hand-off artifacts — `subdomains_merged.txt` → `resolved_subdomains.txt` / `probe_candidates.txt` → `alive_urls.txt` → `params.txt` / `urls_deduped.txt` / `api_endpoints.txt`. Unresolved fallback candidates are never presented as alive; HTTP/TLS tools validate candidates and record explicit reachability states.
+
+Phase 6 is where enumeration becomes AppSec. URL discovery produces tens of
+thousands of near-identical links; nothing can test that directly. `param_miner`
+collapses them into endpoint patterns (`/order/8821` and `/order/9142` are one
+route), groups by parameter set, and keeps one concrete representative each.
+`api_spec` looks for the specification that describes the whole surface at once.
+What comes out is a parameter list — the input DAST, and a human with Burp or
+Caido, actually need.
 
 **Notes**
 - **Cancel deletes data:** every assessment owns an isolated `projects/<project-id>/scans/<scan-id>/assets/` workspace. Cancelling kills in-flight processes and deletes that assessment's results, progress, and artifacts without affecting another run.
@@ -205,6 +282,9 @@ Between phases, ShadowGrid writes canonical hand-off artifacts — `subdomains_m
   domain. Email Verifier calls are controlled by a separate assessment checkbox
   because each discovered address may consume an additional verification credit.
 - **AI analysis** summarises findings when an AI provider key (OpenAI / Anthropic / Google / DeepSeek / Groq) is configured in Settings. With more than one in-scope asset, a **separate analysis is produced per asset**.
+- **Parameter mining** (`param_miner`) runs offline over the URL phase's output — no requests, no API key. Path segments that look like identifiers (numeric, UUID, hash, date, slug) collapse to `{id}`, so one route is one endpoint however many ids were crawled. It writes `params.txt` (fuzzable URLs), `urls_deduped.txt` (one representative per endpoint), and `param_names.txt`, and tags each endpoint with the bug classes its parameter names suggest (`ssrf_or_redirect`, `path_traversal`, `sql_injection`, `reflected_xss`, `command_injection`, `template_injection`, `access_control`).
+- **API discovery** (`api_spec`) probes conventional OpenAPI/Swagger locations and GraphQL entry points on every verified service. A readable specification is flattened into endpoints with their methods, query/path/body parameters, and declared auth requirements; an answering introspection query is reported as a **medium** finding. One specification maps more surface than thousands of content-discovery requests.
+- **Active testing is opt-in.** `nuclei_dast` (parameter fuzzing for XSS, SQLi, SSTI, SSRF, LFI, and open redirect) and `vhost` (Host-header fuzzing against verified service IPs) **send attack payloads**. They are excluded from every default selection, must be named explicitly, and warn before they start. `nuclei_dast` needs `params.txt`, so run `param_miner` first; it is rate-limited to 20 req/s and requires nuclei v3.2+.
 
 ---
 
@@ -223,10 +303,14 @@ Between phases, ShadowGrid writes canonical hand-off artifacts — `subdomains_m
 | naabu | Port scanning |
 | nuclei | Template-based vulnerability scanning |
 | cve_check | CVE-tagged Nuclei checks against verified alive URLs |
-| ffuf | Opt-in bounded content discovery against alive services |
+| ffuf | Opt-in bounded content discovery against alive services (with `.bak`/`.old`/`.zip`/`.sql` variants) |
+| param_miner | Endpoint/parameter extraction and URL pattern dedup (offline, no binary) |
+| api_spec | OpenAPI/Swagger discovery and GraphQL introspection checks |
+| nuclei_dast | **Active** parameter fuzzing via nuclei DAST templates (opt-in) |
+| vhost | **Active** virtual-host discovery via Host-header fuzzing (opt-in) |
 | wafw00f | WAF and reverse-proxy fingerprinting |
 | web_posture | Native security header, cookie, and CORS posture checks |
-| secret_exposure | Masked public secret-exposure detection |
+| secret_exposure | Masked secret-exposure detection — 23 provider patterns plus entropy scoring, JavaScript and config files first |
 | origin_exposure | Direct-origin reachability and response-correlation checks |
 | shodan | Optional Shodan service and reported-CVE enrichment |
 | email_finder | Hunter domain email discovery with optional deliverability verification |
@@ -261,6 +345,9 @@ python3 recon.py -d example.com --passive-only
 # Specific tools
 python3 recon.py -d example.com --tools crtsh,subfinder,httpx,nuclei
 
+# Active testing — never included in a default run, must be named explicitly
+python3 recon.py -d example.com --tools katana,gau,param_miner,nuclei_dast
+
 # Multiple targets + out-of-scope patterns
 python3 recon.py -d example.com shop.example.com --oos "*.internal.example.com"
 
@@ -272,6 +359,11 @@ python3 recon.py --list-tools
 ```
 
 > The CLI shares the exact same scan engine and tool layer as the web app — only the entry point differs.
+
+A bare `python3 recon.py -d example.com` runs every tool **except** the
+active-testing ones (`nuclei_dast`, `vhost`). Those send attack payloads, so
+they only run when named in `--tools`, and the CLI prints an authorisation
+warning before starting them.
 
 ### API keys for the CLI (`.env`)
 
@@ -360,6 +452,14 @@ ShadowGrid's tool layer is pluggable — adding a tool touches two files:
 2. Subclass `BaseTool`; set `name`, `category`, `description`, `parallel_group`.
 3. Implement `run()` (invoke the binary) and `parse()` (raw output → `list[dict]`).
 4. Add one line to `backend/tools/registry.py`.
+5. If the tool sends attack payloads, set `opt_in = True` so it is excluded from
+   every default selection and only runs when named explicitly.
+
+Rows returned by `parse()` are normalised into inventory assets by key: `host`,
+`url`, `ip`/`a`, `port`, `tech`, `email`, and — for AppSec tools — `endpoint`
+with `method` and `params`. A tool that makes its own HTTP requests should use
+`self._headers_for_host(host)` so credential scoping is respected; one driving a
+binary over a list should pass `hosts=` to `self._header_args()`.
 
 That's it — the scan engine, API, and UI pick it up automatically.
 
@@ -371,9 +471,12 @@ That's it — the scan engine, API, and UI pick it up automatically.
 shadow-grid/
 ├── backend/            FastAPI app, scan engine, tool layer, storage, auth
 │   ├── scan_engine.py      phased + parallel orchestration
+│   ├── request_config.py   header validation + credential host binding
+│   ├── env_file.py         local .env credential loading for CLI/bare runs
+│   ├── inventory.py        assets, endpoints, parameters, findings, deltas
 │   ├── tools/              one module per security tool (+ registry.py)
 │   ├── storage/            mandatory SQLite persistence
-│   ├── tests/              pytest suite (URL validation, wpscan targets, storage, endpoints)
+│   ├── tests/              pytest suite (156 tests, no network or binaries needed)
 │   └── reset_password.py   offline password-reset utility
 ├── frontend/           Angular 17 SPA — dashboard, programs, scan activity,
 │                       live progress, interactive results (light/dark)
@@ -399,9 +502,13 @@ npm ci
 npx ng build
 ```
 
-The backend test suite covers the pure logic behind the assessment lifecycle:
-URL liveness validation, wpscan target selection (including the alive-URL
-signal), scan/result deletion, and the project update/clear endpoints.
+The backend test suite (156 tests) covers the pure logic behind the assessment
+lifecycle: URL liveness validation, wpscan target selection (including the
+alive-URL signal), scan/result deletion, and the project update/clear endpoints,
+plus the AppSec pipeline — credential-header scoping, endpoint/parameter
+extraction, OpenAPI and GraphQL parsing, active-tool gating, secret detection
+and entropy scoring, inventory endpoint modelling, and the Burp/Caido exports.
+Everything runs offline: no network, no recon binaries, no API keys.
 
 ---
 

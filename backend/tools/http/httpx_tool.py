@@ -34,7 +34,7 @@ class HttpxTool(BaseTool):
             "pd-httpx", "-silent", "-list", str(alive_file),
             "-title", "-status-code", "-follow-redirects",
             "-tech-detect", "-json", "-o", str(outfile),
-        ] + self._header_args()
+        ] + self._header_args(hosts=self._hosts_in(self._read_lines(alive_file)))
         return await self._exec(command, timeout=900)
 
     def parse(self, result: RunResult, domain: str) -> list[dict[str, Any]]:
