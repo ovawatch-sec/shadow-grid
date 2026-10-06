@@ -33,23 +33,23 @@ import { AuthService } from '../../core/services/auth.service';
         }
 
         @if (mode() === 'login') {
-          <div class="form-group"><label class="form-label">Username</label><input class="form-input" [(ngModel)]="username" autocomplete="username" /></div>
+          <div class="form-group"><label class="form-label" for="auth-username">Username</label><input id="auth-username" class="form-input" [(ngModel)]="username" autocomplete="username" /></div>
         }
         <div class="form-group">
-          <label class="form-label">Password</label>
-          <input class="form-input" type="password" autocomplete="current-password"
+          <label class="form-label" for="auth-password">Password</label>
+          <input id="auth-password" class="form-input" type="password" autocomplete="current-password"
             [(ngModel)]="password" (keyup.enter)="submit()" placeholder="••••••••" />
         </div>
 
         @if (mode() === 'setup') {
           <div class="form-group">
-            <label class="form-label">Confirm password</label>
-            <input class="form-input" type="password" autocomplete="new-password"
+            <label class="form-label" for="auth-confirm">Confirm password</label>
+            <input id="auth-confirm" class="form-input" type="password" autocomplete="new-password"
               [(ngModel)]="confirm" (keyup.enter)="submit()" placeholder="••••••••" />
           </div>
         }
 
-        @if (error()) { <div class="alert alert-danger">{{error()}}</div> }
+        @if (error()) { <div class="alert alert-danger" role="alert">{{error()}}</div> }
 
         <button class="btn btn-primary auth-btn" [disabled]="busy()" (click)="submit()">
           @if (busy()) { <span class="spinner-sm"></span> }
@@ -61,13 +61,13 @@ import { AuthService } from '../../core/services/auth.service';
   styles: [`
     .auth-wrap { min-height:100vh; display:flex; align-items:center; justify-content:center; padding:24px; }
     .auth-card { width:100%; max-width:380px; background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius-lg); padding:32px; }
-    .auth-logo { display:flex; align-items:center; gap:12px; font-family:var(--font-head); font-weight:750; margin-bottom:24px; }
+    .auth-logo { display:flex; align-items:center; gap:12px; font-family:var(--font-sans); font-weight:var(--weight-bold); margin-bottom:var(--space-6); }
     .auth-logo img { width:44px; height:44px; border-radius:10px; }
     .auth-brand { display:flex; flex-direction:column; line-height:1.2; }
     .auth-brand span { font-size:20px; letter-spacing:-.01em; }
     .auth-brand small { font-family:var(--font-mono); font-size:9.5px; font-weight:500; letter-spacing:.14em; text-transform:uppercase; color:var(--text-dim); margin-top:3px; }
     .auth-logo .accent { color:var(--accent); }
-    h1 { font-family:var(--font-head); font-size:20px; font-weight:700; margin-bottom:4px; }
+    h1 { font-family:var(--font-sans); font-size:var(--text-xl); font-weight:var(--weight-bold); margin-bottom:var(--space-1); }
     .sub { color:var(--text-dim); font-size:13px; margin-bottom:20px; }
     .auth-btn { width:100%; margin-top:8px; justify-content:center; }
   `]

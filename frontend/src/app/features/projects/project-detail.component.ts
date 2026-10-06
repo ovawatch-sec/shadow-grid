@@ -1,5 +1,5 @@
 
-import { Component, OnInit, signal, computed } from '@angular/core';
+import { Component, HostListener, OnInit, signal, computed } from '@angular/core';
 import { CommonModule, DatePipe } from '@angular/common';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
@@ -90,10 +90,10 @@ interface CustomHeaderEntry { name: string; value: string; }
         </div>
 
         <!-- Tabs -->
-        <div class="tab-bar">
-          <button class="tab-btn" [class.active]="tab==='targets'" (click)="tab='targets'">Scope</button>
-          <button class="tab-btn" [class.active]="tab==='scan'" (click)="tab='scan'">New Assessment</button>
-          <button class="tab-btn" [class.active]="tab==='history'" (click)="tab='history'">Assessments</button>
+        <div class="tab-bar" role="tablist" aria-label="Program sections">
+          <button class="tab-btn" role="tab" [attr.aria-selected]="tab==='targets'" [class.active]="tab==='targets'" (click)="tab='targets'">Scope</button>
+          <button class="tab-btn" role="tab" [attr.aria-selected]="tab==='scan'" [class.active]="tab==='scan'" (click)="tab='scan'">New Assessment</button>
+          <button class="tab-btn" role="tab" [attr.aria-selected]="tab==='history'" [class.active]="tab==='history'" (click)="tab='history'">Assessments</button>
         </div>
 
         <!-- Targets -->
@@ -116,7 +116,7 @@ interface CustomHeaderEntry { name: string; value: string; }
                     <li class="target-item">
                       <span class="target-domain">{{t.domain}}</span>
                       <span class="badge badge-alive">In-Scope</span>
-                      <button class="btn btn-ghost btn-sm" (click)="removeTarget(t)">✕</button>
+                      <button class="btn btn-ghost btn-sm" (click)="removeTarget(t)" [attr.aria-label]="'Remove ' + t.domain">✕</button>
                     </li>
                   }
                 </ul>
@@ -139,7 +139,7 @@ interface CustomHeaderEntry { name: string; value: string; }
                     <li class="target-item">
                       <span class="target-domain">{{t.domain}}</span>
                       <span class="badge badge-dead">OOS</span>
-                      <button class="btn btn-ghost btn-sm" (click)="removeTarget(t)">✕</button>
+                      <button class="btn btn-ghost btn-sm" (click)="removeTarget(t)" [attr.aria-label]="'Remove ' + t.domain">✕</button>
                     </li>
                   }
                 </ul>
@@ -246,8 +246,9 @@ interface CustomHeaderEntry { name: string; value: string; }
           <!-- Resume vs. new scan prompt -->
           @if (showResumePrompt()) {
             <div class="modal-backdrop" (click)="cancelResumePrompt()">
-              <div class="modal-card" (click)="$event.stopPropagation()">
-                <h3>Previous scan detected</h3>
+              <div class="modal-card" (click)="$event.stopPropagation()"
+                role="dialog" aria-modal="true" aria-labelledby="resume-title">
+                <h3 id="resume-title">Previous scan detected</h3>
                 <p class="modal-text">
                   This project already has scan results. Continue from the previous
                   results (reuses finished tools, only runs new/missing ones), or start
@@ -311,8 +312,9 @@ interface CustomHeaderEntry { name: string; value: string; }
         <!-- Clear project data confirmation -->
         @if (showClear()) {
           <div class="modal-backdrop" (click)="showClear.set(false)">
-            <div class="modal-card" (click)="$event.stopPropagation()">
-              <h3>Clear program data?</h3>
+            <div class="modal-card" (click)="$event.stopPropagation()"
+              role="dialog" aria-modal="true" aria-labelledby="clear-title">
+              <h3 id="clear-title">Clear program data?</h3>
               <p class="modal-text">
                 This permanently deletes <strong>all {{scans().length}} assessment(s)</strong> for
                 <strong>{{project()?.name}}</strong> — including cancelled ones — and their results.
@@ -337,13 +339,6 @@ interface CustomHeaderEntry { name: string; value: string; }
     .shortcut span { font-weight:650; }
     .shortcut b { font-size:10px; color:var(--text-dim); font-weight:500; }
     @media(max-width:700px){.project-shortcuts{grid-template-columns:1fr}}
-    .page { padding:32px; max-width:1200px; margin:0 auto; }
-    .breadcrumb { display:flex; align-items:center; gap:8px; font-size:13px; color:var(--text-dim); margin-bottom:20px; }
-    .breadcrumb a { color:var(--accent); }
-    .sep { color:var(--text-faint); }
-    .page-header { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:24px; }
-    .page-title { font-family:var(--font-head); font-size:24px; font-weight:700; }
-    .page-sub { color:var(--text-dim); font-size:13px; margin-top:4px; }
     .header-actions { display:flex; gap:8px; flex-shrink:0; flex-wrap:wrap; justify-content:flex-end; }
     .edit-form { max-width:560px; }
     .edit-actions { display:flex; gap:8px; justify-content:flex-end; }
@@ -363,7 +358,7 @@ interface CustomHeaderEntry { name: string; value: string; }
     .tool-chk:hover { border-color:var(--accent); }
     .tool-chk.unavail { opacity:.5; cursor:not-allowed; }
     .tool-name { font-family:var(--font-mono); font-size:12px; }
-    .ai-warning { flex-basis:100%; font-size:11px; color:var(--sev-medium); padding:4px 2px; }
+    .ai-warning { flex-basis:100%; font-size:var(--text-sm); color:var(--sev-medium); padding:var(--space-1) 2px; }
     .verification-option { display:flex; align-items:flex-start; gap:10px; margin:4px 0 18px; padding:12px; border:1px solid var(--border); border-radius:var(--radius); background:var(--bg-elevated); cursor:pointer; }
     .verification-option span { display:flex; flex-direction:column; gap:3px; font-size:12px; }
     .verification-option small { color:var(--text-dim); line-height:1.4; }
@@ -376,12 +371,6 @@ interface CustomHeaderEntry { name: string; value: string; }
     .header-row { display:grid;grid-template-columns:minmax(140px,.7fr) minmax(180px,1.3fr) auto;gap:8px;margin:8px 0; }
     .request-hint { display:block;font-size:10px;line-height:1.5;color:var(--text-dim);margin-top:5px; }
     @media(max-width:650px){.header-row{grid-template-columns:1fr}.header-row button{justify-self:start}}
-    input[type=checkbox] { accent-color:var(--accent); cursor:pointer; }
-    .modal-backdrop { position:fixed; inset:0; background:rgba(0,0,0,.6); display:flex; align-items:center; justify-content:center; z-index:200; }
-    .modal-card { background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius-lg); padding:24px; max-width:460px; width:90%; }
-    .modal-card h3 { font-family:var(--font-head); font-weight:600; margin-bottom:10px; }
-    .modal-text { color:var(--text-dim); font-size:13px; line-height:1.5; margin-bottom:20px; }
-    .modal-actions { display:flex; gap:8px; justify-content:flex-end; flex-wrap:wrap; }
   `]
 })
 export class ProjectDetailComponent implements OnInit {
@@ -417,6 +406,14 @@ export class ProjectDetailComponent implements OnInit {
   get toolGroupEntries() { return Object.entries(TOOL_GROUPS); }
 
   isActiveTool(name: string): boolean { return ACTIVE_TOOLS.has(name); }
+
+  /** Escape dismisses an open dialog — previously only a backdrop click did. */
+  @HostListener('document:keydown.escape')
+  onEscape(): void {
+    if (this.showResumePrompt()) { this.cancelResumePrompt(); return; }
+    if (this.showClear()) { this.showClear.set(false); return; }
+    if (this.editing()) this.cancelEdit();
+  }
 
   /** Hostnames the operator allowed credential headers to reach. */
   credentialHosts(): string[] {

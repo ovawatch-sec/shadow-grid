@@ -72,7 +72,7 @@ import { PortfolioResponse } from '../../core/models';
             </div>
           </div>
         } @else {
-          <div class="card" style="padding:8px 0">
+          <div class="card feed-card">
             @for (e of recent(); track e.scan.id) {
               <a class="feed-row" [routerLink]="rowLink(e)">
                 <span class="badge badge-{{e.scan.status}} feed-status">{{e.scan.status}}</span>
@@ -88,6 +88,7 @@ import { PortfolioResponse } from '../../core/models';
     </div>
   `,
   styles: [`
+    .feed-card { padding:var(--space-2) 0; }
     .feed-row { display:flex; align-items:center; gap:14px; padding:11px 20px; border-bottom:1px solid var(--border); transition:background 120ms; }
     .feed-row:last-child { border-bottom:none; }
     .feed-row:hover { background:var(--bg-hover); }

@@ -1,10 +1,17 @@
-import { Component, OnInit, OnDestroy, signal, computed, AfterViewInit } from '@angular/core';
+import { Component, OnInit, OnDestroy, signal, computed, effect, inject, viewChild, type ElementRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../core/services/api.service';
+import { ThemeService } from '../../core/services/theme.service';
 import { InventoryDelta, InventorySnapshot, ToolResult } from '../../core/models';
-import Chart from 'chart.js/auto';
+import { Chart } from 'chart.js';
+import {
+  chartPalette, registerCharts, severityChartConfig, toolChartConfig, SEVERITY_ORDER,
+} from '../../core/charts/chart-theme';
+
+/** Rows rendered per page in the large evidence tables. */
+const ROWS_PER_PAGE = { subdomains: 100, http: 100, vulns: 50, urls: 200 } as const;
 
 type TabId = 'overview'|'inventory'|'graph'|'changes'|'evidence'|'assessment'|'subdomains'|'dns'|'http'|'vulns'|'wordpress'|'urls'|'tech'|'emails'|'dorks'|'screenshots'|'ai';
 
@@ -15,7 +22,7 @@ type TabId = 'overview'|'inventory'|'graph'|'changes'|'evidence'|'assessment'|'s
   templateUrl: './results.component.html',
   styleUrls: ['./results.component.scss'],
 })
-export class ResultsComponent implements OnInit, AfterViewInit, OnDestroy {
+export class ResultsComponent implements OnInit, OnDestroy {
   scanId!: string;
   results = signal<ToolResult[]>([]);
   inventory = signal<InventorySnapshot | null>(null);
@@ -35,8 +42,10 @@ export class ResultsComponent implements OnInit, AfterViewInit, OnDestroy {
   subPage = signal(0);
   httpQ = signal('');
   httpStatus = signal('all');
+  httpPage = signal(0);
   vulnQ = signal('');
   vulnSev = signal('all');
+  vulnPage = signal(0);
   urlQ = signal('');
   urlSrc = signal('all');
   urlPage = signal(0);
@@ -58,12 +67,25 @@ export class ResultsComponent implements OnInit, AfterViewInit, OnDestroy {
   severities = ['all','critical','high','medium','low','info'];
   COMMON_PORTS = new Set([80,443,8080,8443,22,21,25,3389,3306,5432,6379,27017]);
 
-  constructor(private route: ActivatedRoute, public api: ApiService) {}
+  private theme = inject(ThemeService);
+  private sevCanvas = viewChild<ElementRef<HTMLCanvasElement>>('sevCanvas');
+  private toolCanvas = viewChild<ElementRef<HTMLCanvasElement>>('toolCanvas');
+  private sevChart?: Chart<'doughnut'>;
+  private toolChart?: Chart<'bar'>;
+
+  constructor(private route: ActivatedRoute, public api: ApiService) {
+    registerCharts();
+    // One effect owns the chart lifecycle. It re-runs when the canvases enter or
+    // leave the DOM (tab switches), when the underlying data changes (results
+    // stream in while a scan runs), and when the theme flips — which is what the
+    // previous create-once-and-never-touch-again implementation could not do.
+    effect(() => this.renderCharts());
+  }
 
   ngOnInit() {
     this.scanId = this.route.snapshot.paramMap.get('scanId')!;
     this.api.getResults(this.scanId).subscribe({
-      next: rs => { this.results.set(rs); this.loading.set(false); this.initCharts(); },
+      next: rs => { this.results.set(rs); this.loading.set(false); },
       error: () => this.loading.set(false),
     });
     // Watch scan status so the results table can be viewed and interacted with
@@ -75,6 +97,10 @@ export class ResultsComponent implements OnInit, AfterViewInit, OnDestroy {
 
   ngOnDestroy() {
     if (this.pollHandle) window.clearInterval(this.pollHandle);
+    // Chart.js keeps canvases in a global registry and attaches resize
+    // observers; without an explicit destroy they leak on every navigation.
+    this.sevChart?.destroy();
+    this.toolChart?.destroy();
   }
 
   /** True while the underlying scan is still producing results. */
@@ -88,7 +114,7 @@ export class ResultsComponent implements OnInit, AfterViewInit, OnDestroy {
       // Re-fetch results without touching filter/sort/pagination signals, so the
       // user keeps interacting while new rows stream in.
       this.api.getResults(this.scanId).subscribe({
-        next: rs => { this.results.set(rs); this.initCharts(); },
+        next: rs => { this.results.set(rs); },
         error: () => {},
       });
     } else if (this.pollHandle) {
@@ -140,11 +166,8 @@ export class ResultsComponent implements OnInit, AfterViewInit, OnDestroy {
     return [...counts.entries()].map(([type, count]) => ({type, count}));
   });
 
-  ngAfterViewInit() { setTimeout(() => this.initCharts(), 200); }
-
   setTab(t: TabId) {
     this.activeTab.set(t);
-    setTimeout(() => this.initCharts(), 100);
   }
 
   /** True while the user is browsing the evidence landing page or one of its sources. */
@@ -270,9 +293,10 @@ export class ResultsComponent implements OnInit, AfterViewInit, OnDestroy {
   });
   pagedSubs = computed(() => {
     const page = this.subPage();
-    return this.filteredSubs().slice(page * 100, (page + 1) * 100);
+    const size = ROWS_PER_PAGE.subdomains;
+    return this.filteredSubs().slice(page * size, (page + 1) * size);
   });
-  totalSubPages = computed(() => Math.ceil(this.filteredSubs().length / 100));
+  totalSubPages = computed(() => Math.ceil(this.filteredSubs().length / ROWS_PER_PAGE.subdomains));
 
   filteredHttp = computed(() => {
     let rows = this.httpResults();
@@ -328,6 +352,33 @@ export class ResultsComponent implements OnInit, AfterViewInit, OnDestroy {
     return rows;
   });
 
+  pagedHttp = computed(() => {
+    const size = ROWS_PER_PAGE.http;
+    const page = this.httpPage();
+    return this.filteredHttp().slice(page * size, (page + 1) * size);
+  });
+  totalHttpPages = computed(() => Math.ceil(this.filteredHttp().length / ROWS_PER_PAGE.http));
+
+  pagedVulns = computed(() => {
+    const size = ROWS_PER_PAGE.vulns;
+    const page = this.vulnPage();
+    return this.filteredVulns().slice(page * size, (page + 1) * size);
+  });
+  totalVulnPages = computed(() => Math.ceil(this.filteredVulns().length / ROWS_PER_PAGE.vulns));
+
+  /** Text equivalents of the two charts, exposed as the canvas aria-label. */
+  severityChartSummary = computed(() => {
+    const parts = SEVERITY_ORDER.map(level => `${this.sevCount(level)} ${level}`);
+    return `Severity distribution: ${parts.join(', ')}.`;
+  });
+  toolChartSummary = computed(() => {
+    const rows = this.chartToolRows();
+    if (rows.length === 0) return 'Results by tool: no tools have reported yet.';
+    return `Results by tool: ${rows.map(r => `${r.tool} ${r.count}`).join(', ')}.`;
+  });
+  private chartToolRows = computed(() =>
+    [...this.results()].sort((a, b) => b.count - a.count).slice(0, 12));
+
   urlSources = computed(() => {
     const m = new Map<string, number>();
     this.urls().forEach((u: any) => { const s = u['source']||'unknown'; m.set(s,(m.get(s)||0)+1); });
@@ -349,13 +400,13 @@ export class ResultsComponent implements OnInit, AfterViewInit, OnDestroy {
   // ── Filter setters: reset pagination whenever a filter changes ─────────
   setSubQ(value: string) { this.subQ.set(value); this.subPage.set(0); }
   setSubStatus(value: string) { this.subStatus.set(value); this.subPage.set(0); }
-  setHttpQ(value: string) { this.httpQ.set(value); }
-  setHttpStatus(value: string) { this.httpStatus.set(value); }
-  setVulnQ(value: string) { this.vulnQ.set(value); }
-  setVulnSev(value: string) { this.vulnSev.set(value); }
+  setHttpQ(value: string) { this.httpQ.set(value); this.httpPage.set(0); }
+  setHttpStatus(value: string) { this.httpStatus.set(value); this.httpPage.set(0); }
+  setVulnQ(value: string) { this.vulnQ.set(value); this.vulnPage.set(0); }
+  setVulnSev(value: string) { this.vulnSev.set(value); this.vulnPage.set(0); }
   setUrlQ(value: string) { this.urlQ.set(value); this.urlPage.set(0); }
   setUrlSrc(value: string) { this.urlSrc.set(value); this.urlPage.set(0); }
-  totalUrlPages(): number { return Math.ceil(this.filteredUrls().length / 200); }
+  totalUrlPages(): number { return Math.ceil(this.filteredUrls().length / ROWS_PER_PAGE.urls); }
 
   // ── Helper methods ──────────────────────────────────────────────
   sevRank(f: any): number {
@@ -433,33 +484,53 @@ export class ResultsComponent implements OnInit, AfterViewInit, OnDestroy {
 
   techBarWidth(count: number): string { return ((count / this.maxTech()) * 100) + '%'; }
 
-  initCharts() {
-    const sevCanvas  = document.getElementById('chart-sev')  as HTMLCanvasElement;
-    const toolCanvas = document.getElementById('chart-tools') as HTMLCanvasElement;
-    if (sevCanvas && !(sevCanvas as any)._chartInstance) {
-      const counts = this.severities.filter(s => s !== 'all').map(s => this.sevCount(s));
-      const c = new Chart(sevCanvas, {
-        type:'doughnut',
-        data:{ labels:['Critical','High','Medium','Low','Info'],
-          datasets:[{data:counts, backgroundColor:['#ff4757','#ff8c42','#ffc22a','#00bcd4','#78909c'],
-          borderColor:'#0b1628', borderWidth:3}]},
-        options:{responsive:true, maintainAspectRatio:false, cutout:'62%',
-          plugins:{legend:{position:'right', labels:{color:'#c4d4eb', font:{size:11}}}}}
-      });
-      (sevCanvas as any)._chartInstance = c;
+  /**
+   * Create, update, or tear down the overview charts.
+   *
+   * Reading `theme.theme()` registers this effect as a dependency of the active
+   * theme, so a light/dark switch rebuilds both charts with freshly resolved
+   * token colours instead of leaving dark-only hex values on a light surface.
+   */
+  private renderCharts(): void {
+    const themeKey = this.theme.theme();
+    const sevEl = this.sevCanvas()?.nativeElement;
+    const toolEl = this.toolCanvas()?.nativeElement;
+    const palette = chartPalette();
+
+    if (!sevEl) {
+      this.sevChart?.destroy();
+      this.sevChart = undefined;
+    } else {
+      const counts = SEVERITY_ORDER.map(level => this.sevCount(level));
+      if (!this.sevChart || this.sevChart.canvas !== sevEl || this.sevThemeKey !== themeKey) {
+        this.sevChart?.destroy();
+        this.sevChart = new Chart(sevEl, severityChartConfig(counts, palette));
+        this.sevThemeKey = themeKey;
+      } else {
+        this.sevChart.data.datasets[0].data = counts;
+        this.sevChart.update('none');
+      }
     }
-    if (toolCanvas && !(toolCanvas as any)._chartInstance) {
-      const r = this.results().slice(0,12);
-      const c = new Chart(toolCanvas, {
-        type:'bar',
-        data:{ labels:r.map(x => x.tool),
-          datasets:[{label:'Results', data:r.map(x => x.count),
-          backgroundColor:'rgba(0,232,122,.5)', borderColor:'#00e87a', borderWidth:1, borderRadius:4}]},
-        options:{indexAxis:'y', responsive:true, maintainAspectRatio:false,
-          plugins:{legend:{display:false}},
-          scales:{x:{grid:{color:'#1a2e4a'}, ticks:{color:'#60789a'}}, y:{ticks:{color:'#c4d4eb'}}}}
-      });
-      (toolCanvas as any)._chartInstance = c;
+
+    if (!toolEl) {
+      this.toolChart?.destroy();
+      this.toolChart = undefined;
+    } else {
+      const rows = this.chartToolRows();
+      const labels = rows.map(r => r.tool);
+      const values = rows.map(r => r.count);
+      if (!this.toolChart || this.toolChart.canvas !== toolEl || this.toolThemeKey !== themeKey) {
+        this.toolChart?.destroy();
+        this.toolChart = new Chart(toolEl, toolChartConfig(labels, values, palette));
+        this.toolThemeKey = themeKey;
+      } else {
+        this.toolChart.data.labels = labels;
+        this.toolChart.data.datasets[0].data = values;
+        this.toolChart.update('none');
+      }
     }
   }
+
+  private sevThemeKey = '';
+  private toolThemeKey = '';
 }

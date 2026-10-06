@@ -159,14 +159,12 @@ import { SystemStatus, ToolApiKeysConfig } from '../../core/models';
     </div>
   `,
   styles: [`
-    .page { padding:32px; max-width:1200px; margin:0 auto; }
-    .page-title { font-family:var(--font-head); font-size:24px; font-weight:700; }
     .settings-grid { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:16px; align-items:start; }
     .ai-card { grid-column:1 / -1; max-width:720px; }
-    .section-title { font-family:var(--font-head); font-weight:600; margin-bottom:4px; }
+    .section-title { font-family:var(--font-sans); font-weight:var(--weight-semibold); margin-bottom:var(--space-1); }
     .section-copy { font-size:12px; color:var(--text-dim); margin-bottom:20px; }
     .toggle-row { display:flex; align-items:center; justify-content:space-between; cursor:pointer; }
-    input[type=checkbox] { width:18px; height:18px; accent-color:var(--accent); }
+    input[type=checkbox] { width:18px; height:18px; }
     .separator { font-size:11px; color:var(--text-faint); margin:-12px 0 16px; text-align:center; }
     .hint { font-size:11px; color:var(--text-dim); }
     .two-col { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:12px; }

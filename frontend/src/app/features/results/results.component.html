@@ -1,4 +1,4 @@
-<div class="page">
+<div class="page page--wide">
   <div class="breadcrumb">
     <a routerLink="/projects">Projects</a>
     <span class="sep">›</span>
@@ -10,7 +10,7 @@
   } @else {
     <div class="results-header">
       <h1 class="page-title">Assessment results — {{scanId.slice(0,8)}}…</h1>
-      <div style="display:flex;gap:8px;align-items:center">
+      <div class="results-actions">
         @if (isLive()) {
           <a class="btn btn-outline btn-sm" [routerLink]="['/scan', scanId, 'progress']">Live progress</a>
         }
@@ -33,7 +33,7 @@
     }
 
     @if (isLive()) {
-      <div class="alert alert-info" style="display:flex;align-items:center;gap:10px">
+      <div class="alert alert-info live-banner">
         <span class="pulse-dot"></span>
         <span>Assessment is still running — results stream in and refresh automatically. Filters and sorting stay put while data updates.</span>
       </div>
@@ -74,13 +74,13 @@
         <div class="stat-card"><div class="stat-label">Screenshots</div><div class="stat-value">{{screenshots().length}}</div></div>
       </div>
       <div class="charts-row">
-        <div class="chart-card"><div class="chart-title">Severity Distribution</div><div style="position:relative;height:200px"><canvas id="chart-sev"></canvas></div></div>
-        <div class="chart-card"><div class="chart-title">Results by Tool</div><div style="position:relative;height:200px"><canvas id="chart-tools"></canvas></div></div>
+        <div class="chart-card"><div class="chart-title">Severity Distribution</div><div class="chart-canvas-wrap"><canvas #sevCanvas role="img" [attr.aria-label]="severityChartSummary()"></canvas></div></div>
+        <div class="chart-card"><div class="chart-title">Results by Tool</div><div class="chart-canvas-wrap"><canvas #toolCanvas role="img" [attr.aria-label]="toolChartSummary()"></canvas></div></div>
       </div>
       <div class="card">
         <div class="section-head"><span class="section-title">Top Findings</span></div>
         @if (topVulns().length === 0) {
-          <div class="empty-state" style="color:var(--accent)"><span style="font-size:28px">✓</span><p>No vulnerabilities detected</p></div>
+          <div class="empty-state empty-ok"><span class="empty-ok-glyph">✓</span><p>No vulnerabilities detected</p></div>
         } @else {
           @for (v of topVulns(); track $index) {
             <div class="top-finding">
@@ -146,8 +146,8 @@
         <div class="stat-card"><div class="stat-label">Tools reporting</div><div class="stat-value cyan">{{results().length}}</div></div>
         <div class="stat-card"><div class="stat-label">Tool errors</div><div class="stat-value" [class.red]="toolErrors() > 0">{{toolErrors()}}</div></div>
       </div>
-      <div class="card" style="padding:0;overflow:hidden"><div class="table-wrap"><table>
-        <thead><tr><th>Tool</th><th>Domain</th><th>Category</th><th>Records</th><th>Duration</th><th>Outcome</th></tr></thead>
+      <div class="card card-flush"><div class="table-wrap"><table>
+        <thead><tr><th scope="col">Tool</th><th scope="col">Domain</th><th scope="col">Category</th><th scope="col">Records</th><th scope="col">Duration</th><th scope="col">Outcome</th></tr></thead>
         <tbody>@for (result of results(); track result.id) { <tr><td><span class="badge badge-tool">{{result.tool}}</span></td><td class="td-mono">{{result.domain}}</td><td>{{result.category}}</td><td>{{result.count}}</td><td>{{result.elapsed_s | number:'1.1-1'}}s</td><td><span class="badge" [class]="result.error ? 'badge-error' : 'badge-completed'">{{result.error ? result.error : (result.count ? 'Evidence collected' : 'No findings')}}</span></td></tr> }</tbody>
       </table></div></div>
     }
@@ -164,9 +164,9 @@
         </div>
 
         @if (inventoryDelta(); as delta) {
-          <div class="card" style="margin-bottom:16px">
+          <div class="card mb-4">
             <div class="section-head"><span class="section-title">Changes Since Previous Completed Assessment</span></div>
-            <div style="display:flex;flex-wrap:wrap;gap:8px">
+            <div class="badge-row">
               <span class="badge badge-alive">+{{delta.added_assets.length}} assets</span>
               <span class="badge badge-dead">-{{delta.removed_assets.length}} assets</span>
               <span class="badge badge-tool">{{delta.changed_assets.length}} changed</span>
@@ -176,18 +176,18 @@
           </div>
         }
 
-        <div class="card" style="margin-bottom:16px">
+        <div class="card mb-4">
           <div class="section-head"><span class="section-title">Asset Types</span></div>
-          <div style="display:flex;flex-wrap:wrap;gap:8px">
+          <div class="badge-row">
             @for (group of inventoryByType(); track group.type) {
               <span class="tech-pill">{{group.type}}: {{group.count}}</span>
             }
           </div>
         </div>
 
-        <div class="card" style="padding:0;overflow:hidden">
+        <div class="card card-flush">
           <div class="table-wrap"><table>
-            <thead><tr><th>Type</th><th>Asset</th><th>States</th><th>Evidence Sources</th></tr></thead>
+            <thead><tr><th scope="col">Type</th><th scope="col">Asset</th><th scope="col">States</th><th scope="col">Evidence Sources</th></tr></thead>
             <tbody>
               @for (asset of inventory()!.assets; track asset.id) {
                 <tr>
@@ -218,25 +218,25 @@
         <span class="filter-count">{{filteredSubs().length}} results</span>
         <button class="btn btn-outline btn-sm" (click)="exportSubdomains()">↓ Export</button>
       </div>
-      <div class="card" style="padding:0;overflow:hidden">
+      <div class="card card-flush">
         <div class="table-wrap">
           <table>
             <thead><tr>
-              <th>Hostname</th><th>Source</th><th>Status</th><th>HTTP Status</th><th>Title</th><th>Technologies</th><th>Actions</th>
+              <th scope="col">Hostname</th><th scope="col">Source</th><th scope="col">Status</th><th scope="col">HTTP Status</th><th scope="col">Title</th><th scope="col">Technologies</th><th scope="col">Actions</th>
             </tr></thead>
             <tbody>
               @if (filteredSubs().length === 0) {
-                <tr><td colspan="7" style="text-align:center;padding:32px;color:var(--text-dim)">No subdomains match filters</td></tr>
+                <tr><td colspan="7" class="cell-empty">No subdomains match filters</td></tr>
               }
-              @for (s of pagedSubs(); track $index) {
+              @for (s of pagedSubs(); track s['host']) {
                 <tr>
                   <td class="td-mono">{{s['host']}}</td>
                   <td><span class="badge badge-tool">{{s['source']}}</span></td>
                   <td><span class="badge" [class]="s['alive'] ? 'badge-alive' : 'badge-dead'">{{s['alive'] ? 'Alive' : 'Unknown'}}</span></td>
                   <td>@if (s['status']) { <span class="badge" [class]="statusBadge(s['status'])">{{s['status']}}</span> }</td>
-                  <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px">{{s['title'] || '—'}}</td>
+                  <td class="cell-truncate">{{s['title'] || '—'}}</td>
                   <td>
-                    <div style="display:flex;gap:4px;flex-wrap:wrap">
+                    <div class="tech-stack">
                       @for (t of (s['tech'] || []).slice(0, 3); track t) {
                         <span class="tech-pill">{{t}}</span>
                       }
@@ -263,13 +263,13 @@
 
     <!-- ── DNS & ASSETS ── -->
     @if (activeTab() === 'dns') {
-      <div class="card" style="margin-bottom:16px">
+      <div class="card mb-4">
         <div class="section-head"><span class="section-title">DNS Records</span></div>
         @if (dnsRecords().length === 0) {
-          <div class="empty-state" style="padding:20px"><p>No DNS records</p></div>
+          <div class="empty-state empty-state--sm"><p>No DNS records</p></div>
         } @else {
           <div class="table-wrap"><table>
-            <thead><tr><th>Type</th><th>Record</th><th>Domain</th></tr></thead>
+            <thead><tr><th scope="col">Type</th><th scope="col">Record</th><th scope="col">Domain</th></tr></thead>
             <tbody>
               @for (r of dnsRecords(); track $index) {
                 <tr>
@@ -282,7 +282,7 @@
           </table></div>
         }
       </div>
-      <div class="card" style="margin-bottom:16px">
+      <div class="card mb-4">
         <div class="section-head"><span class="section-title">Zone Transfer</span></div>
         @if (zoneResults().length > 0 && zoneResults()[0]['vulnerable']) {
           <div class="alert alert-danger">⚠ Zone transfer SUCCESSFUL — DNS zone exposed!</div>
@@ -296,9 +296,9 @@
         <pre class="pre-block">{{whoisData()}}</pre>
         <hr class="hr">
         <div class="section-head"><span class="section-title">ASN / IP Ranges</span></div>
-        <div style="display:flex;flex-wrap:wrap;gap:6px;padding:4px">
+        <div class="chip-row">
           @for (r of asnRanges(); track $index) {
-            <span style="font-family:var(--font-mono);font-size:11px;padding:3px 10px;border-radius:4px;background:var(--cyan-glow);border:1px solid rgba(0,191,255,.25);color:var(--cyan)">{{r['cidr']}}</span>
+            <span class="cidr-chip">{{r['cidr']}}</span>
           }
         </div>
       </div>
@@ -306,9 +306,9 @@
 
     <!-- ── HTTP & PORTS ── -->
     @if (activeTab() === 'http') {
-      <div class="card" style="margin-bottom:16px;padding:0;overflow:hidden">
-        <div style="padding:14px 16px;border-bottom:1px solid var(--border);font-family:var(--font-head);font-size:13px;font-weight:600">HTTP Services (httpx)</div>
-        <div class="filter-bar" style="border-radius:0;border:none;border-bottom:1px solid var(--border);margin-bottom:0">
+      <div class="card card-flush mb-4">
+        <div class="card-head-inline card-head-title">HTTP Services (httpx)</div>
+        <div class="filter-bar filter-bar--inset">
           <div class="filter-search"><span class="filter-icon">⌕</span><input [ngModel]="httpQ()" (ngModelChange)="setHttpQ($event)" placeholder="Filter URL or title…" /></div>
           <select class="filter-select" [ngModel]="httpStatus()" (ngModelChange)="setHttpStatus($event)">
             <option value="all">All Status</option>
@@ -321,15 +321,15 @@
           <button class="btn btn-outline btn-sm" (click)="exportHttpUrls()">↓ Export URLs</button>
         </div>
         <div class="table-wrap"><table>
-          <thead><tr><th>URL</th><th>Status</th><th>Title</th><th>Technologies</th><th>Actions</th></tr></thead>
+          <thead><tr><th scope="col">URL</th><th scope="col">Status</th><th scope="col">Title</th><th scope="col">Technologies</th><th scope="col">Actions</th></tr></thead>
           <tbody>
-            @for (h of filteredHttp().slice(0, 200); track $index) {
+            @for (h of pagedHttp(); track $index) {
               <tr>
                 <td class="td-url"><a [href]="h['url']" target="_blank">{{h['url']}}</a></td>
                 <td>@if (h['status']) { <span class="badge" [class]="statusBadge(h['status'])">{{h['status']}}</span> }</td>
-                <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px">{{h['title'] || '—'}}</td>
+                <td class="cell-truncate">{{h['title'] || '—'}}</td>
                 <td>
-                  <div style="display:flex;gap:3px">
+                  <div class="tech-stack">
                     @for (t of (h['tech'] || []).slice(0, 3); track t) {
                       <span class="tech-pill">{{t}}</span>
                     }
@@ -340,19 +340,26 @@
             }
           </tbody>
         </table></div>
+        @if (totalHttpPages() > 1) {
+          <div class="pagination">
+            <button class="page-btn" (click)="httpPage.set(httpPage() - 1)" [disabled]="httpPage() === 0" aria-label="Previous page">‹</button>
+            <span>{{httpPage() + 1}} / {{totalHttpPages()}}</span>
+            <button class="page-btn" (click)="httpPage.set(httpPage() + 1)" [disabled]="httpPage() >= totalHttpPages() - 1" aria-label="Next page">›</button>
+          </div>
+        }
       </div>
       <div class="card">
         <div class="section-head"><span class="section-title">Open Ports (naabu)</span><span class="section-count">{{ports().length}}</span></div>
         @if (ports().length === 0) {
           <div class="empty-state"><div class="empty-icon">⬡</div><p>No open ports reported by Naabu.</p></div>
         } @else {
-          <div style="display:flex;flex-wrap:wrap;gap:6px;padding:4px 0 14px">
+          <div class="chip-row">
             @for (p of portSummary(); track p.port) {
               <span [class]="portClass(p.port)" [title]="p.count + ' targets'">:{{p.port}} <small>{{p.count}}</small></span>
             }
           </div>
           <div class="table-wrap"><table>
-            <thead><tr><th>Target</th><th>Port</th><th>Service</th><th>State</th><th></th></tr></thead>
+            <thead><tr><th scope="col">Target</th><th scope="col">Port</th><th scope="col">Service</th><th scope="col">State</th><th scope="col"></th></tr></thead>
             <tbody>
               @for (result of sortedPorts(); track $index) {
                 <tr>
@@ -373,7 +380,7 @@
     @if (activeTab() === 'vulns') {
       <div class="filter-bar">
         <div class="filter-search"><span class="filter-icon">⌕</span><input [ngModel]="vulnQ()" (ngModelChange)="setVulnQ($event)" placeholder="Search template, name, host…" /></div>
-        <div style="display:flex;gap:6px">
+        <div class="pill-group">
           @for (s of severities; track s) {
             <button class="filter-pill" [ngClass]="[s, vulnSev() === s ? 'active' : '']" (click)="setVulnSev(s)">
               {{s}} @if (sevCount(s)) { ({{sevCount(s)}}) }
@@ -383,9 +390,9 @@
         <span class="filter-count">{{filteredVulns().length}}</span>
       </div>
       @if (filteredVulns().length === 0) {
-        <div class="card"><div class="empty-state" style="color:var(--accent)"><span style="font-size:36px">✓</span><p>No vulnerabilities</p></div></div>
+        <div class="card"><div class="empty-state empty-ok"><span class="empty-ok-glyph">✓</span><p>No vulnerabilities</p></div></div>
       } @else {
-        @for (v of filteredVulns().slice(0, 100); track $index) {
+        @for (v of pagedVulns(); track $index) {
           <div class="vuln-card" [class]="v['severity']">
             <div class="vuln-head">
               <span class="badge badge-{{v['severity']}}">{{v['severity']}}</span>
@@ -396,8 +403,17 @@
               <span><span class="key">matched: </span><a [href]="v['matched_at']" target="_blank">{{v['matched_at']}}</a></span>
             </div>
             @if (v['description']) {
-              <p style="margin-top:6px;font-size:12px;color:var(--text-dim)">{{v['description'] | slice:0:200}}</p>
+              <p class="vuln-desc">{{v['description'] | slice:0:200}}</p>
             }
+          </div>
+        }
+        @if (totalVulnPages() > 1) {
+          <div class="card card-flush">
+            <div class="pagination">
+              <button class="page-btn" (click)="vulnPage.set(vulnPage() - 1)" [disabled]="vulnPage() === 0" aria-label="Previous page">‹</button>
+              <span>{{vulnPage() + 1}} / {{totalVulnPages()}}</span>
+              <button class="page-btn" (click)="vulnPage.set(vulnPage() + 1)" [disabled]="vulnPage() >= totalVulnPages() - 1" aria-label="Next page">›</button>
+            </div>
           </div>
         }
       }
@@ -408,31 +424,31 @@
       @if (wpFindings().length === 0) {
         <div class="empty-state"><div class="empty-icon">⬡</div><p>No WordPress findings. WPScan checked every verified alive HTTP service selected for this scan.</p></div>
       } @else {
-        <div class="stat-grid" style="margin-bottom:16px">
+        <div class="stat-grid mb-4">
           <div class="stat-card accent"><div class="stat-label">WordPress Sites</div><div class="stat-value green">{{wpSites()}}</div></div>
           <div class="stat-card"><div class="stat-label">Findings</div><div class="stat-value">{{wpFindings().length}}</div></div>
         </div>
-        <div class="card" style="padding:0;overflow:hidden">
+        <div class="card card-flush">
           <div class="table-wrap"><table>
-            <thead><tr><th>Severity</th><th>Type</th><th>Component</th><th>Finding</th><th>Version</th><th>Fixed In</th><th>Site</th></tr></thead>
+            <thead><tr><th scope="col">Severity</th><th scope="col">Type</th><th scope="col">Component</th><th scope="col">Finding</th><th scope="col">Version</th><th scope="col">Fixed In</th><th scope="col">Site</th></tr></thead>
             <tbody>
               @for (f of wpFindings(); track $index) {
                 <tr>
                   <td><span class="badge badge-{{f['severity']}}">{{f['severity']}}</span></td>
                   <td><span class="badge badge-tool">{{f['wp_type']}}</span></td>
-                  <td class="td-mono" style="font-size:11px">{{f['component'] || '—'}}</td>
-                  <td style="max-width:340px">
-                    <div style="font-size:12px">{{f['title'] || '—'}}</div>
+                  <td class="td-mono td-xs">{{f['component'] || '—'}}</td>
+                  <td class="cell-wide">
+                    <div class="cell-title">{{f['title'] || '—'}}</div>
                     @if ((f['references'] || []).length) {
-                      <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px">
+                      <div class="ref-row">
                         @for (r of f['references']; track r) {
-                          <a class="tech-pill" [href]="r" target="_blank" style="font-size:9px">{{r}}</a>
+                          <a class="tech-pill" [href]="r" target="_blank">{{r}}</a>
                         }
                       </div>
                     }
                   </td>
-                  <td class="td-mono" style="font-size:11px">{{f['version'] || '—'}}</td>
-                  <td class="td-mono" style="font-size:11px">{{f['fixed_in'] || '—'}}</td>
+                  <td class="td-mono td-xs">{{f['version'] || '—'}}</td>
+                  <td class="td-mono td-xs">{{f['fixed_in'] || '—'}}</td>
                   <td class="td-url"><a [href]="f['url']" target="_blank">{{f['url']}}</a></td>
                 </tr>
               }
@@ -444,7 +460,7 @@
 
     <!-- ── URL DISCOVERY ── -->
     @if (activeTab() === 'urls') {
-      <div class="stat-grid" style="margin-bottom:16px">
+      <div class="stat-grid mb-4">
         @for (src of urlSources(); track src.name) {
           <div class="stat-card"><div class="stat-label">{{src.name}}</div><div class="stat-value">{{src.count}}</div></div>
         }
@@ -460,10 +476,10 @@
         <span class="filter-count">{{filteredUrls().length}}</span>
         <button class="btn btn-outline btn-sm" (click)="exportAllUrls()">↓ Export</button>
       </div>
-      <div class="card" style="padding:0;overflow:hidden">
+      <div class="card card-flush">
         @for (u of filteredUrls().slice(urlPage() * 200, (urlPage() + 1) * 200); track $index) {
           <div class="url-row">
-            <span class="badge badge-tool" style="font-size:9px;flex-shrink:0">{{u['source']}}</span>
+            <span class="badge badge-tool badge-fixed">{{u['source']}}</span>
             <a class="url-text" [href]="u['url']" target="_blank">{{u['url']}}</a>
             <button class="copy-btn" (click)="copyItem(u, 'url')">copy</button>
           </div>
@@ -500,13 +516,13 @@
       @if (emails().length === 0) {
         <div class="empty-state"><div class="empty-icon">&#64;</div><p>No email addresses discovered. Select Email Finder and configure a Hunter API key.</p></div>
       } @else {
-        <div class="card" style="padding:0;overflow:hidden">
-          <div class="section-head" style="padding:14px 16px;border-bottom:1px solid var(--border)">
+        <div class="card card-flush">
+          <div class="section-head card-head-inline">
             <span class="section-title">Domain Email Intelligence (Hunter)</span>
             <button class="btn btn-outline btn-sm" (click)="exportEmails()">↓ Export emails</button>
           </div>
           <div class="table-wrap"><table>
-            <thead><tr><th>Email</th><th>Contact</th><th>Position</th><th>Type</th><th>Confidence</th><th>Verification</th><th>Sources</th><th></th></tr></thead>
+            <thead><tr><th scope="col">Email</th><th scope="col">Contact</th><th scope="col">Position</th><th scope="col">Type</th><th scope="col">Confidence</th><th scope="col">Verification</th><th scope="col">Sources</th><th scope="col"></th></tr></thead>
             <tbody>
               @for (email of emails(); track email['email']) {
                 <tr>
@@ -531,25 +547,25 @@
       @if (dorks().length === 0) {
         <div class="empty-state"><div class="empty-icon">⌕</div><p>No Google dorks generated</p></div>
       } @else {
-        <div class="card" style="padding:0;overflow:hidden">
-          <div class="section-head" style="padding:14px 16px;border-bottom:1px solid var(--border)">
+        <div class="card card-flush">
+          <div class="section-head card-head-inline">
             <span class="section-title">Advanced Google Dorks</span>
             <button class="btn btn-outline btn-sm" (click)="exportDorks()">↓ Export</button>
           </div>
           @for (d of dorks(); track $index) {
             <div class="url-row">
-              <span class="badge badge-tool" style="font-size:9px;flex-shrink:0">{{d['priority']}}</span>
-              <div style="flex:1;min-width:0">
-                <div class="url-text" style="white-space:normal;color:var(--text-main)">{{d['purpose']}}</div>
-                <div class="td-mono" style="font-size:10px;color:var(--text-dim);overflow:hidden;text-overflow:ellipsis">{{d['dork']}}</div>
+              <span class="badge badge-tool badge-fixed">{{d['priority']}}</span>
+              <div class="dork-body">
+                <div class="url-text dork-purpose">{{d['purpose']}}</div>
+                <div class="td-mono dork-query">{{d['dork']}}</div>
                 @if (d['url'] && d['engine'] !== 'manual') {
-                  <a class="url-text" style="white-space:normal;display:block;margin-top:4px;font-size:12px" [href]="d['url']" target="_blank">
+                  <a class="url-text dork-hit" [href]="d['url']" target="_blank">
                     {{d['title'] || d['url']}}
                   </a>
                   @if (d['snippet']) {
-                    <div style="font-size:11px;color:var(--text-dim);margin-top:2px">{{d['snippet'] | slice:0:200}}</div>
+                    <div class="dork-snippet">{{d['snippet'] | slice:0:200}}</div>
                   }
-                  <span class="badge badge-tool" style="font-size:8px;margin-top:2px">via {{d['engine']}}</span>
+                  <span class="badge badge-tool">via {{d['engine']}}</span>
                 }
               </div>
               <a class="btn btn-outline btn-sm" [href]="d['google_url']" target="_blank">open</a>
@@ -581,7 +597,7 @@
           <div class="lightbox-box" (click)="$event.stopPropagation()">
             <div class="lb-head">
               <span>{{lightbox['filename']}}</span>
-              <div style="display:flex;gap:8px;align-items:center">
+              <div class="lb-actions">
                 <a class="btn btn-outline btn-sm" [href]="artifactSrc(lightbox)" target="_blank">Open full</a>
                 <button class="btn btn-ghost" (click)="lightbox = null">✕</button>
               </div>
@@ -600,13 +616,13 @@
         <div class="empty-state"><div class="empty-icon">◆</div><p>No AI analysis. Select AI Analysis during scan and configure an AI key in Settings.</p></div>
       } @else {
         @if (aiReports().length > 1) {
-          <p class="page-sub" style="margin-bottom:12px">{{aiReports().length}} in-scope assets — one AI recon analysis per asset.</p>
+          <p class="page-sub mb-3">{{aiReports().length}} in-scope assets — one AI recon analysis per asset.</p>
         }
         @for (report of aiReports(); track $index) {
-          <div class="card ai-report" style="margin-bottom:16px">
-            <div class="section-head" style="margin-bottom:12px">
+          <div class="card ai-report mb-4">
+            <div class="section-head">
               <span class="section-title">{{report['title'] || 'AI Recon Analysis'}}</span>
-              <div style="display:flex;gap:8px;align-items:center">
+              <div class="ai-actions">
                 @if (report['prompt_path']) { <a class="btn btn-outline btn-sm" [href]="artifactPath(report['prompt_path'])" target="_blank">Prompt .md</a> }
                 <button class="btn btn-outline btn-sm" (click)="exportAiReport(report)">↓ Download .md</button>
               </div>

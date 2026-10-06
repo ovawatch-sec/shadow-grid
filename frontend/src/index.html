@@ -5,7 +5,24 @@
     <title>ShadowGrid — AppSec Platform</title>
     <base href="/" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <link rel="icon" type="image/svg+xml" href="assets/shadow-grid-icon.png" />
+    <meta name="color-scheme" content="dark light" />
+    <link rel="icon" type="image/png" href="assets/shadow-grid-icon.png" />
+    <script>
+      /* Stamp the saved theme before first paint. Without this the document
+         renders with the default palette and visibly flips once Angular boots
+         ThemeService — a flash on every page load for anyone whose chosen theme
+         differs from their OS preference. Kept inline and dependency-free so it
+         runs before any stylesheet is applied. */
+      (function () {
+        try {
+          var saved = localStorage.getItem('sg_theme');
+          if (saved !== 'light' && saved !== 'dark') return;
+          document.documentElement.setAttribute('data-theme', saved);
+        } catch (e) {
+          /* Storage can throw in private mode; the OS preference then applies. */
+        }
+      })();
+    </script>
   </head>
   <body>
     <sg-root></sg-root>

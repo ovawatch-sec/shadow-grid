@@ -21,7 +21,7 @@ import { ScanActivityService, ActivityEntry } from '../../core/services/scan-act
           <p class="page-sub">Live and recent security assessments across every program</p>
         </div>
         <button class="btn btn-outline btn-sm" (click)="load()">
-          <span [class.spin]="loading()">⟳</span> Refresh
+          <span [class.spin]="loading()" aria-hidden="true">⟳</span> Refresh
         </button>
       </div>
 
@@ -59,12 +59,12 @@ import { ScanActivityService, ActivityEntry } from '../../core/services/scan-act
           </div>
         }
 
-        <div class="section-head" style="margin-top:26px">
+        <div class="section-head section-head--spaced">
           <span class="section-title">Recent</span>
           <span class="section-count">{{recentEntries().length}}</span>
         </div>
         @if (recentEntries().length === 0) {
-          <div class="card"><div class="empty-state" style="padding:28px"><p>No completed assessments yet.</p></div></div>
+          <div class="card"><div class="empty-state empty-state--sm"><p>No completed assessments yet.</p></div></div>
         } @else {
           <div class="scan-grid">
             @for (e of recentEntries(); track e.scan.id) {
@@ -93,11 +93,13 @@ import { ScanActivityService, ActivityEntry } from '../../core/services/scan-act
     .scan-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:14px; }
     .scan-card { background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius-lg); padding:16px 18px; display:flex; flex-direction:column; gap:9px; box-shadow:var(--shadow); transition:border-color 140ms, transform 140ms; }
     .scan-card:hover { border-color:var(--border-bright); transform:translateY(-1px); }
-    .scan-card.active { border-color:rgba(251,155,63,.45); }
+    .scan-card.active { border-color:var(--sev-high-border); }
+    .section-head--spaced { margin-top:26px; }
+    .empty-state--sm { padding:28px; }
     .sc-top { display:flex; align-items:center; justify-content:space-between; }
     .sc-top .badge { text-transform:capitalize; }
     .sc-id { font-size:11px; color:var(--text-faint); }
-    .sc-project { font-family:var(--font-head); font-size:15px; font-weight:650; color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .sc-project { font-family:var(--font-sans); font-size:var(--text-lg); font-weight:var(--weight-semibold); color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .sc-project:hover { color:var(--accent); }
     .sc-meta { font-size:11.5px; color:var(--text-dim); }
     .sc-actions { display:flex; gap:8px; margin-top:4px; flex-wrap:wrap; }
