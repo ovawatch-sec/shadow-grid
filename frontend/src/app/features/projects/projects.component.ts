@@ -5,11 +5,12 @@ import { RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../core/services/api.service';
 import { Project } from '../../core/models';
+import { EmptyStateComponent } from '../../shared/ui';
 
 @Component({
   selector: 'sg-projects',
   standalone: true,
-  imports: [CommonModule, RouterLink, FormsModule],
+  imports: [CommonModule, RouterLink, FormsModule, EmptyStateComponent],
   template: `
     <div class="page">
       <div class="page-header">
@@ -43,13 +44,10 @@ import { Project } from '../../core/models';
       }
 
       @if (loading()) {
-        <div class="empty-state"><div class="spinner-sm"></div><span>Loading…</span></div>
+        <sg-empty-state loading message="Loading…" />
       } @else if (projects().length === 0) {
-        <div class="empty-state">
-          <div class="empty-icon">🛡️</div>
-          <h3>No programs yet</h3>
-          <p>Create your first application-security program to get started.</p>
-        </div>
+        <sg-empty-state icon="🛡️" heading="No programs yet"
+          message="Create your first application-security program to get started." />
       } @else {
         <div class="projects-grid">
           @for (p of projects(); track p.id) {

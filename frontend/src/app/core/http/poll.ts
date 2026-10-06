@@ -7,7 +7,12 @@ export interface PollConfig<T> {
   /** Builds a fresh request. Called once per tick. */
   request: () => Observable<T>;
   intervalMs: number;
-  /** Polling pauses while this returns false. `refresh()` still fires. */
+  /**
+   * Gates *repeat* ticks only. The first fetch always runs, because the
+   * predicate usually depends on data that first fetch is what supplies — a
+   * view that polls `while: () => isLive()` cannot know whether the scan is
+   * live until it has loaded it once.
+   */
   while?: () => boolean;
 }
 
@@ -44,7 +49,10 @@ export function poll<T>(config: PollConfig<T>): Poll<T> {
   const visible = () => typeof document === 'undefined' || !document.hidden;
   const due = () => visible() && (config.while?.() ?? true);
 
-  const ticks = timer(0, config.intervalMs).pipe(filter(due), map(() => undefined));
+  const ticks = timer(0, config.intervalMs).pipe(
+    filter((tick, index) => index === 0 || due()),
+    map(() => undefined),
+  );
   const resumed = typeof document === 'undefined'
     ? EMPTY
     : fromEvent(document, 'visibilitychange').pipe(filter(due), map(() => undefined));

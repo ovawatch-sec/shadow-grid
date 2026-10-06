@@ -4,6 +4,8 @@ import { CommonModule, DatePipe } from '@angular/common';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../core/services/api.service';
+import { EmptyStateComponent, ModalComponent } from '../../shared/ui';
+import { tabParam } from '../../core/router/tab-param';
 import { Project, Target, Scan, ToolInfo, ScanSchedule } from '../../core/models';
 
 const DEFAULT_TOOLS = [
@@ -34,10 +36,12 @@ const TOOL_GROUPS: Record<string, string[]> = {
 
 interface CustomHeaderEntry { name: string; value: string; }
 
+type ProjectTab = 'targets' | 'scan' | 'history';
+
 @Component({
   selector: 'sg-project-detail',
   standalone: true,
-  imports: [CommonModule, RouterLink, FormsModule],
+  imports: [CommonModule, RouterLink, FormsModule, ModalComponent, EmptyStateComponent],
   template: `
     <div class="page">
       <!-- Breadcrumb -->
@@ -91,13 +95,14 @@ interface CustomHeaderEntry { name: string; value: string; }
 
         <!-- Tabs -->
         <div class="tab-bar" role="tablist" aria-label="Program sections">
-          <button class="tab-btn" role="tab" [attr.aria-selected]="tab==='targets'" [class.active]="tab==='targets'" (click)="tab='targets'">Scope</button>
-          <button class="tab-btn" role="tab" [attr.aria-selected]="tab==='scan'" [class.active]="tab==='scan'" (click)="tab='scan'">New Assessment</button>
-          <button class="tab-btn" role="tab" [attr.aria-selected]="tab==='history'" [class.active]="tab==='history'" (click)="tab='history'">Assessments</button>
+          @for (entry of TABS; track entry.id) {
+            <button class="tab-btn" role="tab" [attr.aria-selected]="tab() === entry.id"
+              [class.active]="tab() === entry.id" (click)="selectTab(entry.id)">{{entry.label}}</button>
+          }
         </div>
 
         <!-- Targets -->
-        @if (tab === 'targets') {
+        @if (tab() === 'targets') {
           <div class="targets-layout">
             <div class="card">
               <div class="section-head">
@@ -109,7 +114,7 @@ interface CustomHeaderEntry { name: string; value: string; }
                 <button class="btn btn-primary btn-sm" (click)="addTarget(false)">Add</button>
               </div>
               @if (inscope().length === 0) {
-                <div class="empty-state" style="padding:24px"><div class="empty-icon" style="font-size:24px">⊡</div><p>No targets yet</p></div>
+                <sg-empty-state icon="⊡" message="No targets yet" compact />
               } @else {
                 <ul class="target-list">
                   @for (t of inscope(); track t.id) {
@@ -132,7 +137,7 @@ interface CustomHeaderEntry { name: string; value: string; }
                 <button class="btn btn-outline btn-sm" (click)="addTarget(true)">Add OOS</button>
               </div>
               @if (oos().length === 0) {
-                <div class="empty-state" style="padding:24px"><p>No OOS rules</p></div>
+                <sg-empty-state message="No OOS rules" compact />
               } @else {
                 <ul class="target-list">
                   @for (t of oos(); track t.id) {
@@ -149,7 +154,7 @@ interface CustomHeaderEntry { name: string; value: string; }
         }
 
         <!-- Launch Scan -->
-        @if (tab === 'scan') {
+        @if (tab() === 'scan') {
           <div class="card" style="max-width:720px">
             <h3 style="font-family:var(--font-head);font-weight:600;margin-bottom:16px">Configure Scan</h3>
 
@@ -245,27 +250,23 @@ interface CustomHeaderEntry { name: string; value: string; }
 
           <!-- Resume vs. new scan prompt -->
           @if (showResumePrompt()) {
-            <div class="modal-backdrop" (click)="cancelResumePrompt()">
-              <div class="modal-card" (click)="$event.stopPropagation()"
-                role="dialog" aria-modal="true" aria-labelledby="resume-title">
-                <h3 id="resume-title">Previous scan detected</h3>
-                <p class="modal-text">
-                  This project already has scan results. Continue from the previous
-                  results (reuses finished tools, only runs new/missing ones), or start
-                  a fresh scan from scratch?
-                </p>
-                <div class="modal-actions">
-                  <button class="btn btn-outline btn-sm" (click)="cancelResumePrompt()">Cancel</button>
-                  <button class="btn btn-outline btn-sm" (click)="confirmLaunch(false)">Start New Scan</button>
-                  <button class="btn btn-primary btn-sm" (click)="confirmLaunch(true)">Continue Previous</button>
-                </div>
+            <sg-modal heading="Previous scan detected" (closed)="cancelResumePrompt()">
+              <p class="modal-text">
+                This project already has scan results. Continue from the previous
+                results (reuses finished tools, only runs new/missing ones), or start
+                a fresh scan from scratch?
+              </p>
+              <div class="modal-actions">
+                <button class="btn btn-outline btn-sm" (click)="cancelResumePrompt()">Cancel</button>
+                <button class="btn btn-outline btn-sm" (click)="confirmLaunch(false)">Start New Scan</button>
+                <button class="btn btn-primary btn-sm" (click)="confirmLaunch(true)">Continue Previous</button>
               </div>
-            </div>
+            </sg-modal>
           }
         }
 
         <!-- History -->
-        @if (tab === 'history') {
+        @if (tab() === 'history') {
           <div class="card">
             <div class="section-head">
               <span class="section-title">Assessments</span>
@@ -277,7 +278,7 @@ interface CustomHeaderEntry { name: string; value: string; }
               }
             </div>
             @if (scans().length === 0) {
-              <div class="empty-state"><div class="empty-icon">🛡️</div><p>No assessments run yet</p></div>
+              <sg-empty-state icon="🛡️" message="No assessments run yet" />
             } @else {
               <div class="table-wrap">
                 <table>
@@ -311,23 +312,19 @@ interface CustomHeaderEntry { name: string; value: string; }
 
         <!-- Clear project data confirmation -->
         @if (showClear()) {
-          <div class="modal-backdrop" (click)="showClear.set(false)">
-            <div class="modal-card" (click)="$event.stopPropagation()"
-              role="dialog" aria-modal="true" aria-labelledby="clear-title">
-              <h3 id="clear-title">Clear program data?</h3>
-              <p class="modal-text">
-                This permanently deletes <strong>all {{scans().length}} assessment(s)</strong> for
-                <strong>{{project()?.name}}</strong> — including cancelled ones — and their results.
-                Any running assessment is stopped first. Targets and the program itself are kept.
-              </p>
-              <div class="modal-actions">
-                <button class="btn btn-ghost btn-sm" (click)="showClear.set(false)">Cancel</button>
-                <button class="btn btn-danger btn-sm" [disabled]="clearing()" (click)="clearData()">
-                  @if (clearing()) { <span class="spinner-sm"></span> } Clear all data
-                </button>
-              </div>
+          <sg-modal heading="Clear program data?" (closed)="showClear.set(false)">
+            <p class="modal-text">
+              This permanently deletes <strong>all {{scans().length}} assessment(s)</strong> for
+              <strong>{{project()?.name}}</strong> — including cancelled ones — and their results.
+              Any running assessment is stopped first. Targets and the program itself are kept.
+            </p>
+            <div class="modal-actions">
+              <button class="btn btn-ghost btn-sm" (click)="showClear.set(false)">Cancel</button>
+              <button class="btn btn-danger btn-sm" [disabled]="clearing()" (click)="clearData()">
+                @if (clearing()) { <span class="spinner-sm"></span> } Clear all data
+              </button>
             </div>
-          </div>
+          </sg-modal>
         }
       }
     </div>
@@ -389,7 +386,14 @@ export class ProjectDetailComponent implements OnInit {
   message = signal('');
   editName = '';
   editDesc = '';
-  tab = 'targets';
+  protected readonly TABS = [
+    { id: 'targets' as const, label: 'Scope' },
+    { id: 'scan' as const, label: 'New Assessment' },
+    { id: 'history' as const, label: 'Assessments' },
+  ];
+  private tabs$ = tabParam(this.TABS.map(entry => entry.id), 'targets');
+  tab = this.tabs$.active;
+  selectTab(id: ProjectTab): void { this.tabs$.select(id); }
   newTarget = '';
   newOos = '';
   customWordlist = '';
@@ -407,12 +411,10 @@ export class ProjectDetailComponent implements OnInit {
 
   isActiveTool(name: string): boolean { return ACTIVE_TOOLS.has(name); }
 
-  /** Escape dismisses an open dialog — previously only a backdrop click did. */
+  /** Escape leaves the inline edit form; sg-modal handles the dialogs itself. */
   @HostListener('document:keydown.escape')
   onEscape(): void {
-    if (this.showResumePrompt()) { this.cancelResumePrompt(); return; }
-    if (this.showClear()) { this.showClear.set(false); return; }
-    if (this.editing()) this.cancelEdit();
+    if (this.editing() && !this.showResumePrompt() && !this.showClear()) this.cancelEdit();
   }
 
   /** Hostnames the operator allowed credential headers to reach. */

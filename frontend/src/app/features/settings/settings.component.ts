@@ -3,11 +3,12 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../core/services/api.service';
 import { SystemStatus, ToolApiKeysConfig } from '../../core/models';
+import { EmptyStateComponent } from '../../shared/ui';
 
 @Component({
   selector: 'sg-settings',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, EmptyStateComponent],
   template: `
     <div class="page">
       <h1 class="page-title">Settings</h1>
@@ -145,7 +146,7 @@ import { SystemStatus, ToolApiKeysConfig } from '../../core/models';
           @if (missingTools().length) {
             <details><summary>{{missingTools().length}} unavailable scanners</summary><div class="tool-health">@for (tool of missingTools(); track tool.name) { <div><span class="badge badge-error">{{tool.name}}</span><span>{{tool.reason}}</span></div> }</div></details>
           }
-        } @else { <div class="empty-state" style="padding:20px"><div class="spinner-sm"></div><span>Checking system health…</span></div> }
+        } @else { <sg-empty-state loading compact message="Checking system health…" /> }
       </div>
 
       <div class="card" style="max-width:960px;margin-top:16px">

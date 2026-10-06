@@ -1,6 +1,8 @@
-import { Component, inject } from "@angular/core";
+import { Component, HostListener, inject, signal } from "@angular/core";
+import { takeUntilDestroyed } from "@angular/core/rxjs-interop";
+import { filter } from "rxjs/operators";
 import { CommonModule } from "@angular/common";
-import { RouterOutlet, RouterLink, RouterLinkActive, Router } from "@angular/router";
+import { RouterOutlet, RouterLink, RouterLinkActive, Router, NavigationEnd } from "@angular/router";
 import { AuthService } from "./core/services/auth.service";
 import { ThemeService } from "./core/services/theme.service";
 
@@ -12,7 +14,21 @@ import { ThemeService } from "./core/services/theme.service";
     @if (auth.authenticated()) {
       <a class="skip-link" href="#main">Skip to content</a>
       <div class="shell">
-        <aside class="sidebar">
+        <header class="topbar">
+          <button class="menu-btn" type="button" (click)="menuOpen.set(true)"
+            aria-label="Open navigation" aria-controls="app-nav" [attr.aria-expanded]="menuOpen()">
+            <svg viewBox="0 0 24 24" class="nav-ico" aria-hidden="true" focusable="false"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+          </button>
+          <img class="brand-mark brand-mark--sm" src="assets/shadow-grid-mark.png" alt="" />
+          <span class="brand-name">Shadow<span class="brand-accent">Grid</span></span>
+        </header>
+
+        @if (menuOpen()) {
+          <div class="nav-scrim" (click)="menuOpen.set(false)"></div>
+        }
+
+        <aside class="sidebar" id="app-nav" [class.open]="menuOpen()">
+          <button class="drawer-close" type="button" (click)="menuOpen.set(false)" aria-label="Close navigation">✕</button>
           <div class="brand">
             <img class="brand-mark" src="assets/shadow-grid-mark.png" alt="ShadowGrid" />
             <div class="brand-text">
@@ -113,24 +129,42 @@ import { ThemeService } from "./core/services/theme.service";
 
     .main-content { flex:1; min-width:0; }
 
+    /* The top bar and the drawer affordances only exist on narrow screens. */
+    .topbar, .menu-btn, .drawer-close, .nav-scrim { display:none; }
+
     @media (max-width:820px) {
+      /* The previous narrow layout squeezed the whole sidebar into a
+         horizontally scrolling icon rail, which pushed the later destinations
+         and both footer controls off-screen with no indication they were
+         there. A drawer shows every destination, with its label. */
       .shell { flex-direction:column; }
+
+      .topbar {
+        display:flex; align-items:center; gap:10px;
+        position:sticky; top:0; z-index:100; padding:10px 14px;
+        background:var(--bg-card); border-bottom:1px solid var(--border);
+      }
+      .menu-btn, .drawer-close {
+        display:flex; align-items:center; justify-content:center;
+        width:36px; height:36px; border-radius:var(--radius); color:var(--text-dim);
+      }
+      .menu-btn:hover, .drawer-close:hover { color:var(--text); background:var(--bg-hover); }
+      .brand-mark--sm { width:26px; height:26px; border-radius:6px; }
+      .topbar .brand-name { font-family:var(--font-sans); font-size:15px; font-weight:var(--weight-bold); }
+
+      .nav-scrim { display:block; position:fixed; inset:0; z-index:150; background:var(--scrim); }
+
       .sidebar {
-        position:sticky; top:0; z-index:100; width:100%; height:auto; flex-direction:row;
-        align-items:center; padding:10px 14px; gap:6px; border-right:none; border-bottom:1px solid var(--border);
-        overflow-x:auto;
+        position:fixed; top:0; left:0; z-index:200; height:100dvh; width:min(280px,86vw);
+        transform:translateX(-100%); transition:transform 180ms var(--ease);
+        box-shadow:var(--shadow-lg); overflow-y:auto;
       }
-      .brand { padding:0 8px 0 0; }
-      .brand-tag { display:none; }
-      .nav { flex-direction:row; margin-top:0; }
-      /* Collapsed rail: the label is hidden visually but stays in the
-         accessibility tree, so the icon-only controls keep their names. */
-      .nav-link .nav-label, .side-btn .nav-label {
-        position:absolute; width:1px; height:1px; padding:0; margin:-1px;
-        overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; border:0;
-      }
-      .nav-link, .side-btn { justify-content:center; }
-      .side-foot { margin-top:0; margin-left:auto; flex-direction:row; border-top:none; padding-top:0; }
+      .sidebar.open { transform:none; }
+      .drawer-close { position:absolute; top:14px; right:12px; font-size:18px; }
+    }
+
+    @media (max-width:820px) and (prefers-reduced-motion: reduce) {
+      .sidebar { transition:none; }
     }
   `],
 })
@@ -139,7 +173,24 @@ export class AppComponent {
   theme = inject(ThemeService);
   private router = inject(Router);
 
+  /** Narrow-screen navigation drawer. Ignored by the desktop layout. */
+  menuOpen = signal(false);
+
+  constructor() {
+    // Close on navigation, so following a link does not leave the drawer
+    // covering the page it just opened.
+    this.router.events
+      .pipe(filter(event => event instanceof NavigationEnd), takeUntilDestroyed())
+      .subscribe(() => this.menuOpen.set(false));
+  }
+
+  @HostListener('document:keydown.escape')
+  closeMenu(): void {
+    this.menuOpen.set(false);
+  }
+
   logout(): void {
+    this.menuOpen.set(false);
     this.auth.logout();
     this.router.navigate(['/login']);
   }

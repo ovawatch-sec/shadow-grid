@@ -4,13 +4,14 @@ import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { PortfolioAsset, PortfolioFinding, PortfolioResponse } from '../../core/models';
 import { ApiService } from '../../core/services/api.service';
+import { EmptyStateComponent, StatCardComponent } from '../../shared/ui';
 
 type PortfolioMode = 'assets' | 'findings' | 'changes';
 
 @Component({
   selector: 'sg-portfolio',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink],
+  imports: [CommonModule, FormsModule, RouterLink, StatCardComponent, EmptyStateComponent],
   template: `
     <div class="page">
       <div class="page-header">
@@ -24,10 +25,13 @@ type PortfolioMode = 'assets' | 'findings' | 'changes';
 
       @if (data(); as portfolio) {
         <div class="stat-grid portfolio-stats">
-          <div class="stat-card accent"><div class="stat-label">Known assets</div><div class="stat-value green">{{portfolio.summary.assets}}</div></div>
-          <div class="stat-card" [class.danger]="portfolio.summary.critical_high > 0"><div class="stat-label">Critical / high</div><div class="stat-value" [class.red]="portfolio.summary.critical_high > 0">{{portfolio.summary.critical_high}}</div></div>
-          <div class="stat-card"><div class="stat-label">Open findings</div><div class="stat-value cyan">{{portfolio.summary.findings}}</div></div>
-          <div class="stat-card"><div class="stat-label">Inventory coverage</div><div class="stat-value">{{coverage()}}%</div><div class="stat-note">{{portfolio.summary.programs_with_inventory}} of {{portfolio.summary.projects}} programs</div></div>
+          <sg-stat-card label="Known assets" [value]="portfolio.summary.assets" tone="green" accent />
+          <sg-stat-card label="Critical / high" [value]="portfolio.summary.critical_high"
+            [tone]="portfolio.summary.critical_high > 0 ? 'red' : 'default'"
+            [danger]="portfolio.summary.critical_high > 0" />
+          <sg-stat-card label="Open findings" [value]="portfolio.summary.findings" tone="cyan" />
+          <sg-stat-card label="Inventory coverage" [value]="coverage() + '%'"
+            [sub]="portfolio.summary.programs_with_inventory + ' of ' + portfolio.summary.projects + ' programs'" />
         </div>
 
         <div class="filter-bar">
@@ -59,7 +63,7 @@ type PortfolioMode = 'assets' | 'findings' | 'changes';
                   <td><span class="risk-count" [class.has-risk]="asset.finding_count > 0">{{asset.finding_count}}</span></td>
                   <td>{{asset.last_seen | date:'MMM d, HH:mm'}}</td>
                 </tr>
-              } @empty { <tr><td colspan="6"><div class="empty-state"><h3>No assets match</h3><p>Adjust the filters or complete an assessment to build inventory.</p></div></td></tr> }
+              } @empty { <tr><td colspan="6"><sg-empty-state heading="No assets match" message="Adjust the filters or complete an assessment to build inventory." /></td></tr> }
             </tbody>
           </table></div></div>
         } @else if (mode() === 'findings') {
@@ -74,7 +78,7 @@ type PortfolioMode = 'assets' | 'findings' | 'changes';
                   <a [routerLink]="['/projects', finding.project_id]">{{finding.project_name}}</a><a class="btn btn-outline btn-sm" [routerLink]="['/scan', finding.scan_id, 'results']">Evidence</a>
                 </div>
               </article>
-            } @empty { <div class="card"><div class="empty-state"><h3>No findings match</h3><p>No unresolved findings meet the selected filters.</p></div></div> }
+            } @empty { <div class="card"><sg-empty-state heading="No findings match" message="No unresolved findings meet the selected filters." /></div> }
           </div>
         } @else {
           <div class="change-grid">
@@ -83,13 +87,17 @@ type PortfolioMode = 'assets' | 'findings' | 'changes';
                 <div class="change-head"><div><a class="change-title" [routerLink]="['/projects', change.project_id]">{{change.project_name}}</a><div class="source-line">{{change.created_at | date:'medium'}}</div></div><a class="btn btn-outline btn-sm" [routerLink]="['/scan', change.scan_id, 'results']">Review</a></div>
                 <div class="change-counts"><span class="delta added">+{{change.added_assets.length}} assets</span><span class="delta removed">−{{change.removed_assets.length}} assets</span><span class="delta changed">{{change.changed_assets.length}} changed</span><span class="delta risk">+{{change.new_findings.length}} findings</span><span class="delta resolved">{{change.resolved_findings.length}} resolved</span></div>
               </article>
-            } @empty { <div class="card"><div class="empty-state"><h3>No changes available</h3><p>Complete two assessments for a program to establish drift.</p></div></div> }
+            } @empty { <div class="card"><sg-empty-state heading="No changes available" message="Complete two assessments for a program to establish drift." /></div> }
           </div>
         }
       } @else if (loading()) {
-        <div class="empty-state"><div class="spinner-sm"></div><span>Building portfolio view…</span></div>
+        <sg-empty-state loading message="Building portfolio view…" />
       } @else {
-        <div class="card"><div class="empty-state"><h3>Portfolio unavailable</h3><p>{{error()}}</p><button class="btn btn-primary" (click)="load()">Try again</button></div></div>
+        <div class="card">
+          <sg-empty-state heading="Portfolio unavailable" [message]="error()">
+            <button class="btn btn-primary" (click)="load()">Try again</button>
+          </sg-empty-state>
+        </div>
       }
     </div>
 
@@ -106,7 +114,7 @@ type PortfolioMode = 'assets' | 'findings' | 'changes';
     }
   `,
   styles: [`
-    .portfolio-stats{margin-bottom:18px}.stat-note,.source-line,.muted{font-size:11px;color:var(--text-dim)}.data-card{padding:0;overflow:hidden}.click-row{cursor:pointer}.click-row:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}.asset-name{font:600 12px var(--font-mono);color:var(--text)}.risk-count{display:inline-grid;place-items:center;min-width:26px;padding:2px 7px;border-radius:12px;background:var(--bg-elevated);font:600 11px var(--font-mono)}.risk-count.has-risk{color:var(--sev-high);background:var(--sev-high-surface)}.finding-list,.change-grid{display:grid;gap:12px}.finding-card{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:17px 18px;background:var(--bg-card);border:1px solid var(--border);border-left:3px solid var(--border-bright);border-radius:var(--radius-lg)}.finding-card.critical{border-left-color:var(--sev-critical)}.finding-card.high{border-left-color:var(--sev-high)}.finding-card.medium{border-left-color:var(--sev-medium)}.finding-card.low{border-left-color:var(--sev-low)}.finding-card.info{border-left-color:var(--sev-info)}.finding-main,.finding-actions,.change-head,.change-counts{display:flex;align-items:center;gap:12px}.finding-main h3{font-size:14px}.finding-actions{margin-left:auto}.change-grid{grid-template-columns:repeat(auto-fit,minmax(330px,1fr))}.change-card{display:flex;flex-direction:column;gap:17px}.change-head{justify-content:space-between}.change-title{font-size:15px;font-weight:700;color:var(--text)}.change-counts{flex-wrap:wrap}.delta{font:600 11px var(--font-mono);padding:4px 8px;border-radius:5px;background:var(--bg-elevated)}.added,.resolved{color:var(--accent)}.removed,.risk{color:var(--sev-high)}.changed{color:var(--cyan)}.drawer-backdrop{position:fixed;inset:0;background:var(--scrim);z-index:190}.asset-drawer{position:fixed;z-index:200;right:0;top:0;height:100vh;width:min(560px,94vw);overflow:auto;background:var(--bg-card);border-left:1px solid var(--border-bright);box-shadow:var(--shadow-lg);padding:28px}.drawer-head{display:flex;justify-content:space-between;gap:20px;padding-bottom:22px;border-bottom:1px solid var(--border)}.drawer-head h2{font:700 19px var(--font-mono);margin:8px 0 2px;overflow-wrap:anywhere}.close-btn{font-size:28px;color:var(--text-dim)}.asset-drawer section{padding:20px 0;border-bottom:1px solid var(--border)}.asset-drawer section h3{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-dim);margin-bottom:12px}.pill-row{display:flex;gap:6px;flex-wrap:wrap}.detail-row{display:flex;align-items:center;gap:9px;padding:7px 0}.detail-row time{margin-left:auto;font-size:10px;color:var(--text-faint)}.relationship{display:grid;grid-template-columns:1fr auto 1fr;gap:8px;align-items:center;padding:7px 0;font:11px var(--font-mono)}.relationship b{color:var(--cyan);font-size:9px}@media(max-width:700px){.finding-card,.finding-actions{align-items:flex-start;flex-direction:column}.finding-actions{margin-left:0}.asset-drawer{padding:20px}.relationship{grid-template-columns:1fr}.relationship b{margin:2px 0}}
+    .portfolio-stats{margin-bottom:18px}.source-line,.muted{font-size:11px;color:var(--text-dim)}.data-card{padding:0;overflow:hidden}.click-row{cursor:pointer}.click-row:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}.asset-name{font:600 12px var(--font-mono);color:var(--text)}.risk-count{display:inline-grid;place-items:center;min-width:26px;padding:2px 7px;border-radius:12px;background:var(--bg-elevated);font:600 11px var(--font-mono)}.risk-count.has-risk{color:var(--sev-high);background:var(--sev-high-surface)}.finding-list,.change-grid{display:grid;gap:12px}.finding-card{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:17px 18px;background:var(--bg-card);border:1px solid var(--border);border-left:3px solid var(--border-bright);border-radius:var(--radius-lg)}.finding-card.critical{border-left-color:var(--sev-critical)}.finding-card.high{border-left-color:var(--sev-high)}.finding-card.medium{border-left-color:var(--sev-medium)}.finding-card.low{border-left-color:var(--sev-low)}.finding-card.info{border-left-color:var(--sev-info)}.finding-main,.finding-actions,.change-head,.change-counts{display:flex;align-items:center;gap:12px}.finding-main h3{font-size:14px}.finding-actions{margin-left:auto}.change-grid{grid-template-columns:repeat(auto-fit,minmax(330px,1fr))}.change-card{display:flex;flex-direction:column;gap:17px}.change-head{justify-content:space-between}.change-title{font-size:15px;font-weight:700;color:var(--text)}.change-counts{flex-wrap:wrap}.delta{font:600 11px var(--font-mono);padding:4px 8px;border-radius:5px;background:var(--bg-elevated)}.added,.resolved{color:var(--accent)}.removed,.risk{color:var(--sev-high)}.changed{color:var(--cyan)}.drawer-backdrop{position:fixed;inset:0;background:var(--scrim);z-index:190}.asset-drawer{position:fixed;z-index:200;right:0;top:0;height:100vh;width:min(560px,94vw);overflow:auto;background:var(--bg-card);border-left:1px solid var(--border-bright);box-shadow:var(--shadow-lg);padding:28px}.drawer-head{display:flex;justify-content:space-between;gap:20px;padding-bottom:22px;border-bottom:1px solid var(--border)}.drawer-head h2{font:700 19px var(--font-mono);margin:8px 0 2px;overflow-wrap:anywhere}.close-btn{font-size:28px;color:var(--text-dim)}.asset-drawer section{padding:20px 0;border-bottom:1px solid var(--border)}.asset-drawer section h3{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-dim);margin-bottom:12px}.pill-row{display:flex;gap:6px;flex-wrap:wrap}.detail-row{display:flex;align-items:center;gap:9px;padding:7px 0}.detail-row time{margin-left:auto;font-size:10px;color:var(--text-faint)}.relationship{display:grid;grid-template-columns:1fr auto 1fr;gap:8px;align-items:center;padding:7px 0;font:11px var(--font-mono)}.relationship b{color:var(--cyan);font-size:9px}@media(max-width:700px){.finding-card,.finding-actions{align-items:flex-start;flex-direction:column}.finding-actions{margin-left:0}.asset-drawer{padding:20px}.relationship{grid-template-columns:1fr}.relationship b{margin:2px 0}}
   `]
 })
 export class PortfolioComponent implements OnInit {

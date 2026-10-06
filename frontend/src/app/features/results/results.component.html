@@ -6,7 +6,7 @@
   </div>
 
   @if (loading()) {
-    <div class="empty-state"><div class="spinner-sm"></div><span>Loading results…</span></div>
+    <sg-empty-state loading message="Loading results…" />
   } @else {
     <div class="results-header">
       <h1 class="page-title">Assessment results — {{scanId.slice(0,8)}}…</h1>
@@ -63,15 +63,15 @@
     <!-- ── OVERVIEW ── -->
     @if (activeTab() === 'overview') {
       <div class="stat-grid">
-        <div class="stat-card accent"><div class="stat-label">Subdomains</div><div class="stat-value green">{{subdomains().length}}</div></div>
-        <div class="stat-card accent"><div class="stat-label">Alive Hosts</div><div class="stat-value green">{{aliveCount()}}</div></div>
-        <div class="stat-card"><div class="stat-label">Open Ports</div><div class="stat-value cyan">{{ports().length}}</div></div>
-        <div class="stat-card" [class.danger]="critHigh()>0"><div class="stat-label">Vulnerabilities</div><div class="stat-value" [class.red]="critHigh()>0">{{vulns().length}}</div></div>
+        <sg-stat-card label="Subdomains" [value]="subdomains().length" tone="green" accent />
+        <sg-stat-card label="Alive Hosts" [value]="aliveCount()" tone="green" accent />
+        <sg-stat-card label="Open Ports" [value]="ports().length" tone="cyan" />
+        <sg-stat-card label="Vulnerabilities" [value]="vulns().length" [tone]="critHigh() > 0 ? 'red' : 'default'" [danger]="critHigh() > 0" />
         @if (wpFindings().length) {
-          <div class="stat-card"><div class="stat-label">WordPress Findings</div><div class="stat-value">{{wpFindings().length}}</div></div>
+          <sg-stat-card label="WordPress Findings" [value]="wpFindings().length" />
         }
-        <div class="stat-card"><div class="stat-label">URLs Found</div><div class="stat-value">{{urls().length}}</div></div>
-        <div class="stat-card"><div class="stat-label">Screenshots</div><div class="stat-value">{{screenshots().length}}</div></div>
+        <sg-stat-card label="URLs Found" [value]="urls().length" />
+        <sg-stat-card label="Screenshots" [value]="screenshots().length" />
       </div>
       <div class="charts-row">
         <div class="chart-card"><div class="chart-title">Severity Distribution</div><div class="chart-canvas-wrap"><canvas #sevCanvas role="img" [attr.aria-label]="severityChartSummary()"></canvas></div></div>
@@ -80,9 +80,9 @@
       <div class="card">
         <div class="section-head"><span class="section-title">Top Findings</span></div>
         @if (topVulns().length === 0) {
-          <div class="empty-state empty-ok"><span class="empty-ok-glyph">✓</span><p>No vulnerabilities detected</p></div>
+          <sg-empty-state tone="ok" icon="✓" message="No vulnerabilities detected" />
         } @else {
-          @for (v of topVulns(); track $index) {
+          @for (v of topVulns(); track v['_key']) {
             <div class="top-finding">
               <span class="badge badge-{{v['severity']}}">{{v['severity']}}</span>
               <span class="tf-name">{{v['name']}}</span>
@@ -112,55 +112,62 @@
         <div class="card"><div class="section-head"><span class="section-title">Relationships</span><span class="section-count">{{graph.edges.length}}</span></div>
           @for (edge of graph.edges; track edge.id) { <div class="top-finding"><span class="badge badge-tool">{{edge.type}}</span><span class="tf-name td-mono">{{edge.source_asset_id.slice(0,8)}} → {{edge.target_asset_id.slice(0,8)}}</span><span class="tf-host">{{edge.sources.join(', ')}}</span></div> }
         </div>
-      } @else { <div class="empty-state"><p>Graph data becomes available after inventory correlation completes.</p></div> }
+      } @else { <sg-empty-state message="Graph data becomes available after inventory correlation completes." /> }
     }
 
     @if (activeTab() === 'changes') {
       @if (inventoryDelta(); as delta) {
         <div class="stat-grid">
-          <div class="stat-card accent"><div class="stat-label">New assets</div><div class="stat-value green">{{delta.added_assets.length}}</div></div>
-          <div class="stat-card"><div class="stat-label">Removed assets</div><div class="stat-value">{{delta.removed_assets.length}}</div></div>
-          <div class="stat-card"><div class="stat-label">Changed assets</div><div class="stat-value cyan">{{delta.changed_assets.length}}</div></div>
-          <div class="stat-card" [class.danger]="delta.new_findings.length > 0"><div class="stat-label">New findings</div><div class="stat-value" [class.red]="delta.new_findings.length > 0">{{delta.new_findings.length}}</div></div>
-          <div class="stat-card"><div class="stat-label">Resolved findings</div><div class="stat-value green">{{delta.resolved_findings.length}}</div></div>
+          <sg-stat-card label="New assets" [value]="delta.added_assets.length" tone="green" accent />
+          <sg-stat-card label="Removed assets" [value]="delta.removed_assets.length" />
+          <sg-stat-card label="Changed assets" [value]="delta.changed_assets.length" tone="cyan" />
+          <sg-stat-card label="New findings" [value]="delta.new_findings.length" [tone]="delta.new_findings.length > 0 ? 'red' : 'default'" [danger]="delta.new_findings.length > 0" />
+          <sg-stat-card label="Resolved findings" [value]="delta.resolved_findings.length" tone="green" />
         </div>
         <div class="card">
           <div class="section-head"><span class="section-title">Drift since previous assessment</span></div>
-          @if (!delta.previous_scan_id) { <div class="empty-state"><h3>Baseline established</h3><p>Run another assessment to detect additions, removals, and resolved risk.</p></div> }
+          @if (!delta.previous_scan_id) { <sg-empty-state heading="Baseline established" message="Run another assessment to detect additions, removals, and resolved risk." /> }
           @for (asset of delta.added_assets; track asset.id) { <div class="top-finding"><span class="badge badge-alive">New asset</span><span class="tf-name td-mono">{{asset.value}}</span><span class="tf-host">{{asset.type}}</span></div> }
           @for (finding of delta.new_findings; track finding.id) { <div class="top-finding"><span class="badge badge-{{finding.severity}}">{{finding.severity}}</span><span class="tf-name">{{finding.title}}</span><span class="tf-host">new finding</span></div> }
           @for (finding of delta.resolved_findings; track finding.id) { <div class="top-finding"><span class="badge badge-alive">Resolved</span><span class="tf-name">{{finding.title}}</span></div> }
         </div>
-      } @else { <div class="empty-state"><p>Change data becomes available after the assessment completes.</p></div> }
+      } @else { <sg-empty-state message="Change data becomes available after the assessment completes." /> }
     }
 
     @if (activeTab() === 'evidence') {
       <div class="card">
-        <div class="empty-state evidence-welcome"><div class="empty-icon">⌕</div><h3>Raw evidence explorer</h3><p>Choose an evidence source from the persistent navigator above. It remains available while you inspect and switch between results.</p></div>
+        <sg-empty-state class="evidence-welcome" icon="⌕" heading="Raw evidence explorer" message="Choose an evidence source from the persistent navigator above. It remains available while you inspect and switch between results." />
       </div>
     }
 
     @if (activeTab() === 'assessment') {
       <div class="stat-grid">
-        <div class="stat-card"><div class="stat-label">Assessment status</div><div class="stat-value status-text">{{scanStatus()}}</div></div>
-        <div class="stat-card"><div class="stat-label">Tools reporting</div><div class="stat-value cyan">{{results().length}}</div></div>
-        <div class="stat-card"><div class="stat-label">Tool errors</div><div class="stat-value" [class.red]="toolErrors() > 0">{{toolErrors()}}</div></div>
+        <sg-stat-card label="Assessment status" [value]="scanStatus()" class="status-card" />
+        <sg-stat-card label="Tools reporting" [value]="results().length" tone="cyan" />
+        <sg-stat-card label="Tool errors" [value]="toolErrors()" [tone]="toolErrors() > 0 ? 'red' : 'default'" />
       </div>
       <div class="card card-flush"><div class="table-wrap"><table>
-        <thead><tr><th scope="col">Tool</th><th scope="col">Domain</th><th scope="col">Category</th><th scope="col">Records</th><th scope="col">Duration</th><th scope="col">Outcome</th></tr></thead>
-        <tbody>@for (result of results(); track result.id) { <tr><td><span class="badge badge-tool">{{result.tool}}</span></td><td class="td-mono">{{result.domain}}</td><td>{{result.category}}</td><td>{{result.count}}</td><td>{{result.elapsed_s | number:'1.1-1'}}s</td><td><span class="badge" [class]="result.error ? 'badge-error' : 'badge-completed'">{{result.error ? result.error : (result.count ? 'Evidence collected' : 'No findings')}}</span></td></tr> }</tbody>
+        <thead><tr>
+          <th sgSort [indicator]="toolSort.indicator('tool')" [ariaSort]="toolSort.ariaSort('tool')" (sort)="toolSort.toggle('tool')">Tool</th>
+          <th sgSort [indicator]="toolSort.indicator('domain')" [ariaSort]="toolSort.ariaSort('domain')" (sort)="toolSort.toggle('domain')">Domain</th>
+          <th sgSort [indicator]="toolSort.indicator('category')" [ariaSort]="toolSort.ariaSort('category')" (sort)="toolSort.toggle('category')">Category</th>
+          <th sgSort [indicator]="toolSort.indicator('count')" [ariaSort]="toolSort.ariaSort('count')" (sort)="toolSort.toggle('count')">Records</th>
+          <th sgSort [indicator]="toolSort.indicator('elapsed')" [ariaSort]="toolSort.ariaSort('elapsed')" (sort)="toolSort.toggle('elapsed')">Duration</th>
+          <th scope="col">Outcome</th>
+        </tr></thead>
+        <tbody>@for (result of sortedResults(); track result.id) { <tr><td><span class="badge badge-tool">{{result.tool}}</span></td><td class="td-mono">{{result.domain}}</td><td>{{result.category}}</td><td>{{result.count}}</td><td>{{result.elapsed_s | number:'1.1-1'}}s</td><td><span class="badge" [class]="result.error ? 'badge-error' : 'badge-completed'">{{result.error ? result.error : (result.count ? 'Evidence collected' : 'No findings')}}</span></td></tr> }</tbody>
       </table></div></div>
     }
 
     @if (activeTab() === 'inventory') {
       @if (!inventory()) {
-        <div class="empty-state"><p>Normalized inventory becomes available when the assessment completes.</p></div>
+        <sg-empty-state message="Normalized inventory becomes available when the assessment completes." />
       } @else {
         <div class="stat-grid">
-          <div class="stat-card accent"><div class="stat-label">Assets</div><div class="stat-value green">{{inventory()!.assets.length}}</div></div>
-          <div class="stat-card"><div class="stat-label">Relationships</div><div class="stat-value cyan">{{inventory()!.relationships.length}}</div></div>
-          <div class="stat-card"><div class="stat-label">Observations</div><div class="stat-value">{{inventory()!.observations.length}}</div></div>
-          <div class="stat-card"><div class="stat-label">Normalized Findings</div><div class="stat-value">{{inventory()!.findings.length}}</div></div>
+          <sg-stat-card label="Assets" [value]="inventory()!.assets.length" tone="green" accent />
+          <sg-stat-card label="Relationships" [value]="inventory()!.relationships.length" tone="cyan" />
+          <sg-stat-card label="Observations" [value]="inventory()!.observations.length" />
+          <sg-stat-card label="Normalized Findings" [value]="inventory()!.findings.length" />
         </div>
 
         @if (inventoryDelta(); as delta) {
@@ -215,18 +222,23 @@
           <option value="alive">Alive Only</option>
           <option value="dead">Dead Only</option>
         </select>
-        <span class="filter-count">{{filteredSubs().length}} results</span>
+        <span class="filter-count">{{sortedSubs().length}} results</span>
         <button class="btn btn-outline btn-sm" (click)="exportSubdomains()">↓ Export</button>
       </div>
       <div class="card card-flush">
         <div class="table-wrap">
           <table>
             <thead><tr>
-              <th scope="col">Hostname</th><th scope="col">Source</th><th scope="col">Status</th><th scope="col">HTTP Status</th><th scope="col">Title</th><th scope="col">Technologies</th><th scope="col">Actions</th>
+              <th sgSort [indicator]="subSort.indicator('host')" [ariaSort]="subSort.ariaSort('host')" (sort)="subSort.toggle('host')">Hostname</th>
+              <th sgSort [indicator]="subSort.indicator('source')" [ariaSort]="subSort.ariaSort('source')" (sort)="subSort.toggle('source')">Source</th>
+              <th sgSort [indicator]="subSort.indicator('alive')" [ariaSort]="subSort.ariaSort('alive')" (sort)="subSort.toggle('alive')">Status</th>
+              <th sgSort [indicator]="subSort.indicator('status')" [ariaSort]="subSort.ariaSort('status')" (sort)="subSort.toggle('status')">HTTP Status</th>
+              <th sgSort [indicator]="subSort.indicator('title')" [ariaSort]="subSort.ariaSort('title')" (sort)="subSort.toggle('title')">Title</th>
+              <th scope="col">Technologies</th><th scope="col">Actions</th>
             </tr></thead>
             <tbody>
               @if (filteredSubs().length === 0) {
-                <tr><td colspan="7" class="cell-empty">No subdomains match filters</td></tr>
+                <tr><td colspan="7"><sg-empty-state compact message="No subdomains match filters" /></td></tr>
               }
               @for (s of pagedSubs(); track s['host']) {
                 <tr>
@@ -252,11 +264,7 @@
           </table>
         </div>
         @if (totalSubPages() > 1) {
-          <div class="pagination">
-            <button class="page-btn" (click)="subPage.set(subPage() - 1)" [disabled]="subPage() === 0">‹</button>
-            <span>{{subPage() + 1}} / {{totalSubPages()}}</span>
-            <button class="page-btn" (click)="subPage.set(subPage() + 1)" [disabled]="subPage() >= totalSubPages() - 1">›</button>
-          </div>
+          <sg-pager [page]="subPage()" [totalPages]="totalSubPages()" (pageChange)="subPage.set($event)" />
         }
       </div>
     }
@@ -266,12 +274,12 @@
       <div class="card mb-4">
         <div class="section-head"><span class="section-title">DNS Records</span></div>
         @if (dnsRecords().length === 0) {
-          <div class="empty-state empty-state--sm"><p>No DNS records</p></div>
+          <sg-empty-state compact message="No DNS records" />
         } @else {
           <div class="table-wrap"><table>
             <thead><tr><th scope="col">Type</th><th scope="col">Record</th><th scope="col">Domain</th></tr></thead>
             <tbody>
-              @for (r of dnsRecords(); track $index) {
+              @for (r of dnsRecords(); track r['_key']) {
                 <tr>
                   <td><span class="badge badge-tool">{{r['type']}}</span></td>
                   <td class="td-mono">{{r['record']}}</td>
@@ -297,7 +305,7 @@
         <hr class="hr">
         <div class="section-head"><span class="section-title">ASN / IP Ranges</span></div>
         <div class="chip-row">
-          @for (r of asnRanges(); track $index) {
+          @for (r of asnRanges(); track r['_key']) {
             <span class="cidr-chip">{{r['cidr']}}</span>
           }
         </div>
@@ -321,9 +329,14 @@
           <button class="btn btn-outline btn-sm" (click)="exportHttpUrls()">↓ Export URLs</button>
         </div>
         <div class="table-wrap"><table>
-          <thead><tr><th scope="col">URL</th><th scope="col">Status</th><th scope="col">Title</th><th scope="col">Technologies</th><th scope="col">Actions</th></tr></thead>
+          <thead><tr>
+            <th sgSort [indicator]="httpSort.indicator('url')" [ariaSort]="httpSort.ariaSort('url')" (sort)="httpSort.toggle('url')">URL</th>
+            <th sgSort [indicator]="httpSort.indicator('status')" [ariaSort]="httpSort.ariaSort('status')" (sort)="httpSort.toggle('status')">Status</th>
+            <th sgSort [indicator]="httpSort.indicator('title')" [ariaSort]="httpSort.ariaSort('title')" (sort)="httpSort.toggle('title')">Title</th>
+            <th scope="col">Technologies</th><th scope="col">Actions</th>
+          </tr></thead>
           <tbody>
-            @for (h of pagedHttp(); track $index) {
+            @for (h of pagedHttp(); track h['_key']) {
               <tr>
                 <td class="td-url"><a [href]="h['url']" target="_blank">{{h['url']}}</a></td>
                 <td>@if (h['status']) { <span class="badge" [class]="statusBadge(h['status'])">{{h['status']}}</span> }</td>
@@ -341,17 +354,13 @@
           </tbody>
         </table></div>
         @if (totalHttpPages() > 1) {
-          <div class="pagination">
-            <button class="page-btn" (click)="httpPage.set(httpPage() - 1)" [disabled]="httpPage() === 0" aria-label="Previous page">‹</button>
-            <span>{{httpPage() + 1}} / {{totalHttpPages()}}</span>
-            <button class="page-btn" (click)="httpPage.set(httpPage() + 1)" [disabled]="httpPage() >= totalHttpPages() - 1" aria-label="Next page">›</button>
-          </div>
+          <sg-pager [page]="httpPage()" [totalPages]="totalHttpPages()" (pageChange)="httpPage.set($event)" />
         }
       </div>
       <div class="card">
         <div class="section-head"><span class="section-title">Open Ports (naabu)</span><span class="section-count">{{ports().length}}</span></div>
         @if (ports().length === 0) {
-          <div class="empty-state"><div class="empty-icon">⬡</div><p>No open ports reported by Naabu.</p></div>
+          <sg-empty-state icon="⬡" message="No open ports reported by Naabu." />
         } @else {
           <div class="chip-row">
             @for (p of portSummary(); track p.port) {
@@ -361,7 +370,7 @@
           <div class="table-wrap"><table>
             <thead><tr><th scope="col">Target</th><th scope="col">Port</th><th scope="col">Service</th><th scope="col">State</th><th scope="col"></th></tr></thead>
             <tbody>
-              @for (result of sortedPorts(); track $index) {
+              @for (result of sortedPorts(); track result['_key']) {
                 <tr>
                   <td class="mono">{{result['host'] || '—'}}</td>
                   <td><span [class]="portClass(result['port'])">{{result['port']}}</span></td>
@@ -390,9 +399,9 @@
         <span class="filter-count">{{filteredVulns().length}}</span>
       </div>
       @if (filteredVulns().length === 0) {
-        <div class="card"><div class="empty-state empty-ok"><span class="empty-ok-glyph">✓</span><p>No vulnerabilities</p></div></div>
+        <div class="card"><sg-empty-state tone="ok" icon="✓" message="No vulnerabilities" /></div>
       } @else {
-        @for (v of pagedVulns(); track $index) {
+        @for (v of pagedVulns(); track v['_key']) {
           <div class="vuln-card" [class]="v['severity']">
             <div class="vuln-head">
               <span class="badge badge-{{v['severity']}}">{{v['severity']}}</span>
@@ -409,11 +418,7 @@
         }
         @if (totalVulnPages() > 1) {
           <div class="card card-flush">
-            <div class="pagination">
-              <button class="page-btn" (click)="vulnPage.set(vulnPage() - 1)" [disabled]="vulnPage() === 0" aria-label="Previous page">‹</button>
-              <span>{{vulnPage() + 1}} / {{totalVulnPages()}}</span>
-              <button class="page-btn" (click)="vulnPage.set(vulnPage() + 1)" [disabled]="vulnPage() >= totalVulnPages() - 1" aria-label="Next page">›</button>
-            </div>
+            <sg-pager [page]="vulnPage()" [totalPages]="totalVulnPages()" (pageChange)="vulnPage.set($event)" />
           </div>
         }
       }
@@ -422,17 +427,17 @@
     <!-- ── WORDPRESS (wpscan) ── -->
     @if (activeTab() === 'wordpress') {
       @if (wpFindings().length === 0) {
-        <div class="empty-state"><div class="empty-icon">⬡</div><p>No WordPress findings. WPScan checked every verified alive HTTP service selected for this scan.</p></div>
+        <sg-empty-state icon="⬡" message="No WordPress findings. WPScan checked every verified alive HTTP service selected for this scan." />
       } @else {
         <div class="stat-grid mb-4">
-          <div class="stat-card accent"><div class="stat-label">WordPress Sites</div><div class="stat-value green">{{wpSites()}}</div></div>
-          <div class="stat-card"><div class="stat-label">Findings</div><div class="stat-value">{{wpFindings().length}}</div></div>
+          <sg-stat-card label="WordPress Sites" [value]="wpSites()" tone="green" accent />
+          <sg-stat-card label="Findings" [value]="wpFindings().length" />
         </div>
         <div class="card card-flush">
           <div class="table-wrap"><table>
             <thead><tr><th scope="col">Severity</th><th scope="col">Type</th><th scope="col">Component</th><th scope="col">Finding</th><th scope="col">Version</th><th scope="col">Fixed In</th><th scope="col">Site</th></tr></thead>
             <tbody>
-              @for (f of wpFindings(); track $index) {
+              @for (f of wpFindings(); track f['_key']) {
                 <tr>
                   <td><span class="badge badge-{{f['severity']}}">{{f['severity']}}</span></td>
                   <td><span class="badge badge-tool">{{f['wp_type']}}</span></td>
@@ -462,7 +467,7 @@
     @if (activeTab() === 'urls') {
       <div class="stat-grid mb-4">
         @for (src of urlSources(); track src.name) {
-          <div class="stat-card"><div class="stat-label">{{src.name}}</div><div class="stat-value">{{src.count}}</div></div>
+          <sg-stat-card [label]="src.name" [value]="src.count" />
         }
       </div>
       <div class="filter-bar">
@@ -477,27 +482,20 @@
         <button class="btn btn-outline btn-sm" (click)="exportAllUrls()">↓ Export</button>
       </div>
       <div class="card card-flush">
-        @for (u of filteredUrls().slice(urlPage() * 200, (urlPage() + 1) * 200); track $index) {
-          <div class="url-row">
+        <cdk-virtual-scroll-viewport class="url-viewport" itemSize="27" minBufferPx="400" maxBufferPx="800">
+          <div class="url-row" *cdkVirtualFor="let u of filteredUrls(); trackBy: trackUrl">
             <span class="badge badge-tool badge-fixed">{{u['source']}}</span>
             <a class="url-text" [href]="u['url']" target="_blank">{{u['url']}}</a>
             <button class="copy-btn" (click)="copyItem(u, 'url')">copy</button>
           </div>
-        }
-        @if (filteredUrls().length > 200) {
-          <div class="pagination">
-            <button class="page-btn" (click)="urlPage.set(urlPage() - 1)" [disabled]="urlPage() === 0">‹</button>
-            <span>{{urlPage() + 1}} / {{totalUrlPages()}}</span>
-            <button class="page-btn" (click)="urlPage.set(urlPage() + 1)" [disabled]="(urlPage() + 1) * 200 >= filteredUrls().length">›</button>
-          </div>
-        }
+        </cdk-virtual-scroll-viewport>
       </div>
     }
 
     <!-- ── TECH STACK ── -->
     @if (activeTab() === 'tech') {
       @if (techInventory().length === 0) {
-        <div class="empty-state"><div class="empty-icon">⊛</div><p>No technology data</p></div>
+        <sg-empty-state icon="⊛" message="No technology data" />
       } @else {
         <div class="tech-inventory">
           @for (t of techInventory(); track t.name) {
@@ -514,7 +512,7 @@
     <!-- ── EMAIL INTELLIGENCE ── -->
     @if (activeTab() === 'emails') {
       @if (emails().length === 0) {
-        <div class="empty-state"><div class="empty-icon">&#64;</div><p>No email addresses discovered. Select Email Finder and configure a Hunter API key.</p></div>
+        <sg-empty-state icon="&#64;" message="No email addresses discovered. Select Email Finder and configure a Hunter API key." />
       } @else {
         <div class="card card-flush">
           <div class="section-head card-head-inline">
@@ -524,7 +522,7 @@
           <div class="table-wrap"><table>
             <thead><tr><th scope="col">Email</th><th scope="col">Contact</th><th scope="col">Position</th><th scope="col">Type</th><th scope="col">Confidence</th><th scope="col">Verification</th><th scope="col">Sources</th><th scope="col"></th></tr></thead>
             <tbody>
-              @for (email of emails(); track email['email']) {
+              @for (email of emails(); track email['_key']) {
                 <tr>
                   <td class="td-mono">{{email['email']}}</td>
                   <td>{{email['full_name'] || '—'}}</td>
@@ -545,14 +543,14 @@
     <!-- ── GOOGLE DORKS ── -->
     @if (activeTab() === 'dorks') {
       @if (dorks().length === 0) {
-        <div class="empty-state"><div class="empty-icon">⌕</div><p>No Google dorks generated</p></div>
+        <sg-empty-state icon="⌕" message="No Google dorks generated" />
       } @else {
         <div class="card card-flush">
           <div class="section-head card-head-inline">
             <span class="section-title">Advanced Google Dorks</span>
             <button class="btn btn-outline btn-sm" (click)="exportDorks()">↓ Export</button>
           </div>
-          @for (d of dorks(); track $index) {
+          @for (d of dorks(); track d['_key']) {
             <div class="url-row">
               <span class="badge badge-tool badge-fixed">{{d['priority']}}</span>
               <div class="dork-body">
@@ -579,10 +577,10 @@
     <!-- ── SCREENSHOTS ── -->
     @if (activeTab() === 'screenshots') {
       @if (screenshots().length === 0) {
-        <div class="empty-state"><div class="empty-icon">▦</div><p>No screenshots</p></div>
+        <sg-empty-state icon="▦" message="No screenshots" />
       } @else {
         <div class="screenshots-grid">
-          @for (s of screenshots(); track $index) {
+          @for (s of screenshots(); track s['_key']) {
             <button class="ss-card" (click)="lightbox = s" type="button">
               <div class="ss-img-wrap">
                 <img class="ss-img" [src]="artifactSrc(s)" [alt]="s['filename']" loading="lazy" />
@@ -613,12 +611,12 @@
     <!-- ── AI ANALYSIS ── -->
     @if (activeTab() === 'ai') {
       @if (aiReports().length === 0) {
-        <div class="empty-state"><div class="empty-icon">◆</div><p>No AI analysis. Select AI Analysis during scan and configure an AI key in Settings.</p></div>
+        <sg-empty-state icon="◆" message="No AI analysis. Select AI Analysis during scan and configure an AI key in Settings." />
       } @else {
         @if (aiReports().length > 1) {
           <p class="page-sub mb-3">{{aiReports().length}} in-scope assets — one AI recon analysis per asset.</p>
         }
-        @for (report of aiReports(); track $index) {
+        @for (report of aiReports(); track report['_key']) {
           <div class="card ai-report mb-4">
             <div class="section-head">
               <span class="section-title">{{report['title'] || 'AI Recon Analysis'}}</span>

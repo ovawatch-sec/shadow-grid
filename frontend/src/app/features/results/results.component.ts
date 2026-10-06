@@ -1,10 +1,14 @@
 import { Component, OnDestroy, signal, computed, effect, inject, viewChild, type ElementRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { ScrollingModule } from '@angular/cdk/scrolling';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../core/services/api.service';
 import { ThemeService } from '../../core/services/theme.service';
 import { poll, type Poll } from '../../core/http/poll';
+import { EmptyStateComponent, PagerComponent, SortHeaderComponent, StatCardComponent, createSort } from '../../shared/ui';
+import { tabParam } from '../../core/router/tab-param';
+import { keyOf, withStableKeys } from '../../core/collections/stable-key';
 import { InventoryDelta, InventorySnapshot, Scan, ToolResult } from '../../core/models';
 import { Chart } from 'chart.js';
 import {
@@ -12,14 +16,14 @@ import {
 } from '../../core/charts/chart-theme';
 
 /** Rows rendered per page in the large evidence tables. */
-const ROWS_PER_PAGE = { subdomains: 100, http: 100, vulns: 50, urls: 200 } as const;
+const ROWS_PER_PAGE = { subdomains: 100, http: 100, vulns: 50 } as const;
 
 type TabId = 'overview'|'inventory'|'graph'|'changes'|'evidence'|'assessment'|'subdomains'|'dns'|'http'|'vulns'|'wordpress'|'urls'|'tech'|'emails'|'dorks'|'screenshots'|'ai';
 
 @Component({
   selector: 'sg-results',
   standalone: true,
-  imports: [CommonModule, RouterLink, FormsModule],
+  imports: [CommonModule, ScrollingModule, RouterLink, FormsModule, StatCardComponent, PagerComponent, EmptyStateComponent, SortHeaderComponent],
   templateUrl: './results.component.html',
   styleUrls: ['./results.component.scss'],
 })
@@ -37,7 +41,7 @@ export class ResultsComponent implements OnDestroy {
   cleanupError = signal('');
   private readonly scanPoll: Poll<Scan>;
   private readonly resultsPoll: Poll<ToolResult[]>;
-  activeTab = signal<TabId>('overview');
+
   lightbox: any = null;
   subQ = signal('');
   subStatus = signal('all');
@@ -50,7 +54,15 @@ export class ResultsComponent implements OnDestroy {
   vulnPage = signal(0);
   urlQ = signal('');
   urlSrc = signal('all');
-  urlPage = signal(0);
+
+  private static readonly ALL_TABS: readonly TabId[] = [
+    'overview', 'inventory', 'graph', 'changes', 'evidence', 'assessment',
+    'subdomains', 'dns', 'http', 'vulns', 'wordpress', 'urls', 'tech',
+    'emails', 'dorks', 'screenshots', 'ai',
+  ];
+  private tabs$ = tabParam<TabId>(ResultsComponent.ALL_TABS, 'overview');
+  /** Derived from the URL, so a results view is linkable and back-navigable. */
+  activeTab = this.tabs$.active;
 
   tabs = [
     {id:'overview' as TabId, label:'Overview'},
@@ -67,6 +79,29 @@ export class ResultsComponent implements OnDestroy {
     {id:'emails',label:'Emails'}, {id:'dorks',label:'Dorks'}, {id:'screenshots',label:'Screenshots'}, {id:'ai',label:'AI analysis'},
   ];
   severities = ['all','critical','high','medium','low','info'];
+
+  // Column sorting. `th.th-sortable` is applied only to headers wired here, so
+  // the pointer affordance now matches what the header actually does.
+  subSort = createSort<'host' | 'source' | 'alive' | 'status' | 'title', any>({
+    host: row => row['host'],
+    source: row => row['source'],
+    alive: row => (row['alive'] ? 1 : 0),
+    status: row => Number(row['status']) || null,
+    title: row => row['title'],
+  });
+  httpSort = createSort<'url' | 'status' | 'title', any>({
+    url: row => row['url'],
+    status: row => Number(row['status']) || null,
+    title: row => row['title'],
+  });
+  toolSort = createSort<'tool' | 'domain' | 'category' | 'count' | 'elapsed', ToolResult>({
+    tool: row => row.tool,
+    domain: row => row.domain,
+    category: row => row.category,
+    count: row => row.count,
+    elapsed: row => row.elapsed_s,
+  });
+  sortedResults = computed(() => this.toolSort.apply(this.results()));
   COMMON_PORTS = new Set([80,443,8080,8443,22,21,25,3389,3306,5432,6379,27017]);
 
   private theme = inject(ThemeService);
@@ -162,7 +197,7 @@ export class ResultsComponent implements OnDestroy {
   });
 
   setTab(t: TabId) {
-    this.activeTab.set(t);
+    this.tabs$.select(t);
   }
 
   /** True while the user is browsing the evidence landing page or one of its sources. */
@@ -232,8 +267,8 @@ export class ResultsComponent implements OnDestroy {
   });
 
   aliveCount   = computed(() => this.subdomains().filter((s: any) => s['alive']).length);
-  ports        = computed(() => this.byTool('naabu'));
-  vulns        = computed(() => [
+  ports        = computed(() => withStableKeys(this.byTool('naabu'), p => keyOf(p['host'], p['port'])));
+  vulns        = computed(() => withStableKeys([
     ...this.byCategory('vuln'),
     ...(this.inventory()?.findings || [])
       .filter(finding => finding.tool === 'shodan')
@@ -245,19 +280,23 @@ export class ResultsComponent implements OnDestroy {
         matched_at: String(finding.data['cve'] || ''),
         source: 'shodan',
       })),
-  ]);
-  urls         = computed(() => this.results().filter(r => r.category === 'url').flatMap(r => r.data));
-  screenshots  = computed(() => this.byTool('gowitness'));
-  dorks        = computed(() => this.byTool('google_dorks'));
-  emails       = computed(() => this.byTool('email_finder'));
-  wpFindings   = computed(() => this.byTool('wpscan'));
+  ], v => keyOf(v['template_id'], v['matched_at'], v['host'], v['name'])));
+  urls         = computed(() => withStableKeys(
+    this.results().filter(r => r.category === 'url').flatMap(r => r.data),
+    u => keyOf(u['url'], u['source'])));
+  screenshots  = computed(() => withStableKeys(this.byTool('gowitness'), s => keyOf(s['filename'], s['path'])));
+  dorks        = computed(() => withStableKeys(this.byTool('google_dorks'), d => keyOf(d['dork'], d['url'])));
+  emails       = computed(() => withStableKeys(this.byTool('email_finder'), e => keyOf(e['email'])));
+  wpFindings   = computed(() => withStableKeys(this.byTool('wpscan'),
+    f => keyOf(f['url'], f['wp_type'], f['component'], f['title'])));
   // One AI report per in-scope asset (each scanned domain produces its own row).
-  aiReports    = computed(() => this.byTool('ai_analysis'));
-  dnsRecords   = computed(() => this.byTool('dns_records'));
+  aiReports    = computed(() => withStableKeys(this.byTool('ai_analysis'), r => keyOf(r['domain'], r['title'])));
+  dnsRecords   = computed(() => withStableKeys(this.byTool('dns_records'),
+    r => keyOf(r['type'], r['record'], r['domain'])));
   zoneResults  = computed(() => this.byTool('zone_transfer'));
   whoisData    = computed(() => { const d = this.byTool('whois')[0]; return d ? d['whois'] : 'No WHOIS data'; });
-  asnRanges    = computed(() => this.byTool('asnmap'));
-  httpResults  = computed(() => this.byTool('httpx'));
+  asnRanges    = computed(() => withStableKeys(this.byTool('asnmap'), r => keyOf(r['cidr'])));
+  httpResults  = computed(() => withStableKeys(this.byTool('httpx'), h => keyOf(h['url'], h['host'])));
   toolErrors = computed(() => this.results().filter(result => !!result.error).length);
 
   techInventory = computed(() => {
@@ -286,10 +325,12 @@ export class ResultsComponent implements OnDestroy {
 
     return rows;
   });
+  /** Sort is applied before paging, so it orders the whole result set. */
+  sortedSubs = computed(() => this.subSort.apply(this.filteredSubs()));
   pagedSubs = computed(() => {
     const page = this.subPage();
     const size = ROWS_PER_PAGE.subdomains;
-    return this.filteredSubs().slice(page * size, (page + 1) * size);
+    return this.sortedSubs().slice(page * size, (page + 1) * size);
   });
   totalSubPages = computed(() => Math.ceil(this.filteredSubs().length / ROWS_PER_PAGE.subdomains));
 
@@ -347,10 +388,11 @@ export class ResultsComponent implements OnDestroy {
     return rows;
   });
 
+  sortedHttp = computed(() => this.httpSort.apply(this.filteredHttp()));
   pagedHttp = computed(() => {
     const size = ROWS_PER_PAGE.http;
     const page = this.httpPage();
-    return this.filteredHttp().slice(page * size, (page + 1) * size);
+    return this.sortedHttp().slice(page * size, (page + 1) * size);
   });
   totalHttpPages = computed(() => Math.ceil(this.filteredHttp().length / ROWS_PER_PAGE.http));
 
@@ -399,9 +441,10 @@ export class ResultsComponent implements OnDestroy {
   setHttpStatus(value: string) { this.httpStatus.set(value); this.httpPage.set(0); }
   setVulnQ(value: string) { this.vulnQ.set(value); this.vulnPage.set(0); }
   setVulnSev(value: string) { this.vulnSev.set(value); this.vulnPage.set(0); }
-  setUrlQ(value: string) { this.urlQ.set(value); this.urlPage.set(0); }
-  setUrlSrc(value: string) { this.urlSrc.set(value); this.urlPage.set(0); }
-  totalUrlPages(): number { return Math.ceil(this.filteredUrls().length / ROWS_PER_PAGE.urls); }
+  setUrlQ(value: string) { this.urlQ.set(value); }
+  setUrlSrc(value: string) { this.urlSrc.set(value); }
+  /** cdkVirtualFor needs a TrackByFunction rather than a template expression. */
+  trackUrl = (_: number, row: Record<string, unknown>) => row['_key'] as string;
 
   // ── Helper methods ──────────────────────────────────────────────
   sevRank(f: any): number {
@@ -443,8 +486,8 @@ export class ResultsComponent implements OnDestroy {
   }
 
   // ── Export methods (no arrow functions in template) ─────────────
-  exportSubdomains()  { this.exportTxt(this.filteredSubs().map((s: any) => s['host']), 'subdomains.txt'); }
-  exportHttpUrls()    { this.exportTxt(this.filteredHttp().map((h: any) => h['url']), 'alive_urls.txt'); }
+  exportSubdomains()  { this.exportTxt(this.sortedSubs().map((s: any) => s['host']), 'subdomains.txt'); }
+  exportHttpUrls()    { this.exportTxt(this.sortedHttp().map((h: any) => h['url']), 'alive_urls.txt'); }
   exportAllUrls()     { this.exportTxt(this.filteredUrls().map((u: any) => u['url']), 'urls.txt'); }
   exportDorks()       { this.exportTxt(this.dorks().map((d: any) => d['dork']), 'google_dorks.txt'); }
   exportEmails()      { this.exportTxt(this.emails().map((e: any) => e['email']), 'emails.txt'); }

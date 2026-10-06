@@ -4,6 +4,7 @@ import { RouterLink } from '@angular/router';
 import { ScanActivityService, ActivityEntry } from '../../core/services/scan-activity.service';
 import { ApiService } from '../../core/services/api.service';
 import { poll } from '../../core/http/poll';
+import { EmptyStateComponent, StatCardComponent } from '../../shared/ui';
 
 /**
  * Security-posture overview. Aggregates programs and their assessments into a
@@ -13,7 +14,7 @@ import { poll } from '../../core/http/poll';
 @Component({
   selector: 'sg-dashboard',
   standalone: true,
-  imports: [CommonModule, RouterLink],
+  imports: [CommonModule, RouterLink, StatCardComponent, EmptyStateComponent],
   template: `
     <div class="page">
       <div class="page-header">
@@ -25,34 +26,23 @@ import { poll } from '../../core/http/poll';
       </div>
 
       @if (loading()) {
-        <div class="empty-state"><div class="spinner-sm"></div><span>Loading posture…</span></div>
+        <sg-empty-state loading message="Loading posture…" />
       } @else {
         <div class="stat-grid">
-          <div class="stat-card accent">
-            <div class="stat-label">Programs</div>
-            <div class="stat-value green">{{programs()}}</div>
-            <div class="stat-sub">application scopes under management</div>
-          </div>
-          <div class="stat-card" [class.danger]="active() > 0">
-            <div class="stat-label">Active assessments</div>
-            <div class="stat-value" [class.orange]="active() > 0">{{active()}}</div>
-            <div class="stat-sub">{{active() > 0 ? 'scanning now' : 'idle'}}</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-label">Completed</div>
-            <div class="stat-value cyan">{{completed()}}</div>
-            <div class="stat-sub">finished assessments</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-label">Known assets</div>
-            <div class="stat-value">{{portfolio()?.summary?.assets || 0}}</div>
+          <sg-stat-card label="Programs" [value]="programs()" tone="green" accent
+            sub="application scopes under management" />
+          <sg-stat-card label="Active assessments" [value]="active()"
+            [tone]="active() > 0 ? 'orange' : 'default'" [danger]="active() > 0"
+            [sub]="active() > 0 ? 'scanning now' : 'idle'" />
+          <sg-stat-card label="Completed" [value]="completed()" tone="cyan" sub="finished assessments" />
+          <sg-stat-card label="Known assets" [value]="portfolio()?.summary?.assets || 0">
             <div class="stat-sub"><a routerLink="/assets">open inventory</a></div>
-          </div>
-          <div class="stat-card" [class.danger]="(portfolio()?.summary?.critical_high || 0) > 0">
-            <div class="stat-label">Critical / high</div>
-            <div class="stat-value" [class.red]="(portfolio()?.summary?.critical_high || 0) > 0">{{portfolio()?.summary?.critical_high || 0}}</div>
+          </sg-stat-card>
+          <sg-stat-card label="Critical / high" [value]="portfolio()?.summary?.critical_high || 0"
+            [tone]="(portfolio()?.summary?.critical_high || 0) > 0 ? 'red' : 'default'"
+            [danger]="(portfolio()?.summary?.critical_high || 0) > 0">
             <div class="stat-sub"><a routerLink="/findings">review findings</a></div>
-          </div>
+          </sg-stat-card>
         </div>
 
         <div class="section-head">
@@ -64,12 +54,10 @@ import { poll } from '../../core/http/poll';
 
         @if (entries().length === 0) {
           <div class="card">
-            <div class="empty-state">
-              <div class="empty-icon">🛡️</div>
-              <h3>No assessments yet</h3>
-              <p>Create a program, add in-scope applications, and launch your first security assessment.</p>
+            <sg-empty-state icon="🛡️" heading="No assessments yet"
+              message="Create a program, add in-scope applications, and launch your first security assessment.">
               <a class="btn btn-primary" routerLink="/projects">Create a program</a>
-            </div>
+            </sg-empty-state>
           </div>
         } @else {
           <div class="card feed-card">

@@ -71,6 +71,7 @@
   --cyan: #38bdf8; --cyan-glow: rgba(56, 189, 248, .12);
   --chart-series: #00c06e;
   --orange: #fb9b3f; --purple: #a78bfa;
+  --pulse-ring: rgba(251, 155, 63, .5);
   --purple-surface: rgba(167, 139, 250, .14); --purple-border: rgba(167, 139, 250, .24);
 
   /* Text — all ≥ 4.5:1 on --bg-card */
@@ -109,6 +110,7 @@
   --cyan: #0369a1; --cyan-glow: rgba(3, 105, 161, .10);
   --chart-series: #15996a;
   --orange: #b45309; --purple: #6d28d9;
+  --pulse-ring: rgba(180, 83, 9, .45);
   --purple-surface: #f1ebfd; --purple-border: #ddd0fa;
 
   --text: #16233a; --text-dim: #566581; --text-faint: #64748b;
@@ -255,8 +257,16 @@ th {
   text-transform: uppercase; white-space: nowrap;
 }
 /* Sorting is opt-in: a header only looks interactive when it actually is. */
-th.th-sortable { cursor: pointer; user-select: none; }
-th.th-sortable:hover { color: var(--accent); }
+th.th-sortable { padding: 0; }
+th.th-sortable[aria-sort='ascending'], th.th-sortable[aria-sort='descending'] { color: var(--accent); }
+.th-sort-btn {
+  display: flex; align-items: center; gap: 5px; width: 100%;
+  padding: 10px var(--space-4); font: inherit; color: inherit;
+  letter-spacing: inherit; text-transform: inherit; text-align: left;
+  cursor: pointer; user-select: none;
+}
+.th-sort-btn:hover { color: var(--accent); }
+.sort-ind { font-size: 8px; line-height: 1; }
 td { padding: 9px var(--space-4); border-bottom: 1px solid var(--border); vertical-align: middle; }
 tr:last-child td { border-bottom: none; }
 tbody tr:hover td { background: var(--bg-hover); }
@@ -337,14 +347,20 @@ tbody tr:hover td { background: var(--bg-hover); }
 .pre-block { font-family: var(--font-mono); font-size: var(--text-sm); line-height: 1.7; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); padding: var(--space-4); overflow-x: auto; white-space: pre-wrap; max-height: 320px; overflow-y: auto; }
 .spinner-sm { width: 15px; height: 15px; border: 2px solid var(--border-bright); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; display: inline-block; }
 @keyframes spin { to { transform: rotate(360deg); } }
+/* The ring colour is declared as a plain token rather than derived with
+   color-mix(), which would silently drop the ring on an older engine. */
 .pulse-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--orange); display: inline-block; animation: pulse 1.6s infinite; }
 @keyframes pulse {
-  0%   { box-shadow: 0 0 0 0 color-mix(in srgb, var(--orange) 50%, transparent); }
+  0%   { box-shadow: 0 0 0 0 var(--pulse-ring); }
   70%  { box-shadow: 0 0 0 7px transparent; }
   100% { box-shadow: 0 0 0 0 transparent; }
 }
 .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: var(--space-12); color: var(--text-dim); gap: var(--space-3); font-size: var(--text-md); text-align: center; }
+.empty-state--sm { padding: var(--space-5); }
 .empty-icon { font-size: 34px; opacity: .55; }
+/* "Nothing found, and that is the good outcome" — e.g. no vulnerabilities. */
+.empty-ok { color: var(--accent); }
+.empty-ok-glyph { font-size: 28px; opacity: 1; }
 .copy-btn { padding: 2px 7px; font-size: var(--text-xs); font-family: var(--font-mono); border: 1px solid var(--border); border-radius: 4px; background: var(--bg-elevated); color: var(--text-dim); cursor: pointer; transition: border-color var(--duration-fast) var(--ease), color var(--duration-fast) var(--ease); }
 .copy-btn:hover { border-color: var(--accent); color: var(--accent); }
 .tech-pill { font-family: var(--font-mono); font-size: var(--text-xs); padding: 1px 7px; border-radius: 4px; background: var(--purple-surface); color: var(--purple); border: 1px solid var(--purple-border); }

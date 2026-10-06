@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { RouterLink } from '@angular/router';
 import { ScanActivityService, ActivityEntry } from '../../core/services/scan-activity.service';
 import { poll } from '../../core/http/poll';
+import { EmptyStateComponent } from '../../shared/ui';
 
 /**
  * Cross-program scan activity board. Concurrent assessments render as discrete
@@ -13,7 +14,7 @@ import { poll } from '../../core/http/poll';
 @Component({
   selector: 'sg-activity',
   standalone: true,
-  imports: [CommonModule, RouterLink],
+  imports: [CommonModule, RouterLink, EmptyStateComponent],
   template: `
     <div class="page">
       <div class="page-header">
@@ -27,14 +28,14 @@ import { poll } from '../../core/http/poll';
       </div>
 
       @if (loading() && entries().length === 0) {
-        <div class="empty-state"><div class="spinner-sm"></div><span>Loading activity…</span></div>
+        <sg-empty-state loading message="Loading activity…" />
       } @else if (entries().length === 0) {
-        <div class="card"><div class="empty-state">
-          <div class="empty-icon">📡</div>
-          <h3>No scan activity</h3>
-          <p>Launch an assessment from any program to see it tracked here in real time.</p>
-          <a class="btn btn-primary" routerLink="/projects">Go to programs</a>
-        </div></div>
+        <div class="card">
+          <sg-empty-state icon="📡" heading="No scan activity"
+            message="Launch an assessment from any program to see it tracked here in real time.">
+            <a class="btn btn-primary" routerLink="/projects">Go to programs</a>
+          </sg-empty-state>
+        </div>
       } @else {
         @if (activeEntries().length > 0) {
           <div class="section-head">
@@ -65,7 +66,7 @@ import { poll } from '../../core/http/poll';
           <span class="section-count">{{recentEntries().length}}</span>
         </div>
         @if (recentEntries().length === 0) {
-          <div class="card"><div class="empty-state empty-state--sm"><p>No completed assessments yet.</p></div></div>
+          <div class="card"><sg-empty-state compact message="No completed assessments yet." /></div>
         } @else {
           <div class="scan-grid">
             @for (e of recentEntries(); track e.scan.id) {
@@ -96,7 +97,6 @@ import { poll } from '../../core/http/poll';
     .scan-card:hover { border-color:var(--border-bright); transform:translateY(-1px); }
     .scan-card.active { border-color:var(--sev-high-border); }
     .section-head--spaced { margin-top:26px; }
-    .empty-state--sm { padding:28px; }
     .sc-top { display:flex; align-items:center; justify-content:space-between; }
     .sc-top .badge { text-transform:capitalize; }
     .sc-id { font-size:11px; color:var(--text-faint); }
