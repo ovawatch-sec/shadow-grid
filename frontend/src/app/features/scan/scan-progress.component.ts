@@ -7,6 +7,29 @@ import { ScanProgressEvent } from '../../core/models';
 
 type ProgressRow = ScanProgressEvent & { key: string };
 
+/** A phase within one domain: its tools, and how far through them the scan is. */
+interface PhaseGroup {
+  index: number;
+  name: string;
+  rows: ProgressRow[];
+  done: number;
+  total: number;
+  percent: number;
+  running: boolean;
+}
+
+interface DomainGroup {
+  domain: string;
+  phases: PhaseGroup[];
+  done: number;
+  total: number;
+  percent: number;
+  running: boolean;
+}
+
+/** Declared by the engine for a phase it is about to run, or is skipping. */
+interface PhaseMeta { domain: string; index: number; name: string; status: string; }
+
 @Component({
   selector: 'sg-scan-progress',
   standalone: true,
@@ -57,43 +80,61 @@ type ProgressRow = ScanProgressEvent & { key: string };
         </div>
       }
 
-      <div class="domain-grid">
-        @for (g of domainGroups(); track g.domain) {
-          <div class="domain-card" [class.dc-active]="g.running && !done()">
-            <div class="dc-head">
-              @if (g.running && !done()) { <span class="spinner-sm"></span> } @else { <span class="dc-dot">◆</span> }
-              <span class="dc-domain mono">{{g.domain}}</span>
-              <span class="dc-count mono">{{g.done}}/{{g.total}}</span>
+      @for (g of domainGroups(); track g.domain) {
+        <section class="domain-block" [class.db-active]="g.running && !done()">
+          <header class="db-head">
+            @if (g.running && !done()) { <span class="spinner-sm"></span> } @else { <span class="db-dot" aria-hidden="true">◆</span> }
+            <h2 class="db-domain mono">{{g.domain}}</h2>
+            <span class="db-count mono">{{g.done}}/{{g.total}} tools</span>
+            <div class="db-bar" role="progressbar" [attr.aria-label]="g.domain + ' progress'"
+              [attr.aria-valuenow]="g.percent" aria-valuemin="0" aria-valuemax="100">
+              <div class="db-fill" [style.width.%]="g.percent"></div>
             </div>
-            <div class="dc-bar"><div class="dc-fill" [style.width.%]="g.total ? (g.done / g.total) * 100 : 0"></div></div>
-            <div class="dc-list">
-              @for (ev of g.rows; track ev.key) {
-                <div class="progress-item" [class]="'pi-' + ev.status">
-                  <div class="pi-icon">
-                    @switch (ev.status) {
-                      @case ('running') { <span class="spinner-sm"></span> }
-                      @case ('done') { <span class="pi-check">✓</span> }
-                      @case ('completed') { <span class="pi-check">✓</span> }
-                      @case ('error') { <span class="pi-x">✗</span> }
-                      @case ('failed') { <span class="pi-x">✗</span> }
-                      @case ('skipped') { <span class="pi-skip">—</span> }
-                      @case ('cancelled') { <span class="pi-skip">—</span> }
+          </header>
+
+          <div class="phase-row">
+            @for (p of g.phases; track p.index) {
+              <article class="phase-card" [class.pc-running]="p.running && !done()" [class.pc-idle]="p.total === 0">
+                <header class="pc-head">
+                  <span class="pc-index mono">Phase {{p.index}}</span>
+                  <span class="pc-count mono">{{p.done}}/{{p.total}}</span>
+                </header>
+                <h3 class="pc-name">{{p.name}}</h3>
+                <div class="pc-bar"><div class="pc-fill" [style.width.%]="p.percent"></div></div>
+
+                @if (p.rows.length === 0) {
+                  <p class="pc-empty">No selected tools</p>
+                } @else {
+                  <ul class="pc-tools">
+                    @for (ev of p.rows; track ev.key) {
+                      <li class="progress-item" [class]="'pi-' + ev.status">
+                        <span class="pi-icon">
+                          @switch (ev.status) {
+                            @case ('running') { <span class="spinner-sm"></span> }
+                            @case ('done') { <span class="pi-check" aria-hidden="true">✓</span> }
+                            @case ('completed') { <span class="pi-check" aria-hidden="true">✓</span> }
+                            @case ('error') { <span class="pi-x" aria-hidden="true">✗</span> }
+                            @case ('failed') { <span class="pi-x" aria-hidden="true">✗</span> }
+                            @case ('skipped') { <span class="pi-skip" aria-hidden="true">—</span> }
+                            @case ('cancelled') { <span class="pi-skip" aria-hidden="true">—</span> }
+                          }
+                        </span>
+                        <span class="pi-main">
+                          <span class="pi-line">
+                            <span class="pi-tool">{{ev.tool}}</span>
+                            @if (ev.count) { <span class="pi-count">{{ev.count}}</span> }
+                          </span>
+                          @if (ev.message) { <span class="pi-msg" [title]="ev.message">{{ev.message}}</span> }
+                        </span>
+                      </li>
                     }
-                  </div>
-                  <div class="pi-main">
-                    <div class="pi-line">
-                      <span class="pi-tool">{{ev.tool}}</span>
-                      @if (ev.count) { <span class="pi-count">{{ev.count}} results</span> }
-                      <span class="badge badge-{{ev.status}}">{{ev.status}}</span>
-                    </div>
-                    @if (ev.message) { <div class="pi-msg">{{ev.message}}</div> }
-                  </div>
-                </div>
-              }
-            </div>
+                  </ul>
+                }
+              </article>
+            }
           </div>
-        }
-      </div>
+        </section>
+      }
 
       @if (done()) {
         <div class="done-banner" [class.done-ok]="!failed()" [class.done-err]="failed()">
@@ -106,16 +147,38 @@ type ProgressRow = ScanProgressEvent & { key: string };
     </div>
   `,
   styles: [`
-    .domain-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(340px,1fr)); gap:14px; margin-bottom:20px; }
-    .domain-card { background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius-lg); padding:14px 16px; box-shadow:var(--shadow); }
-    .domain-card.dc-active { border-color:var(--sev-high-border); }
-    .dc-head { display:flex; align-items:center; gap:10px; margin-bottom:10px; }
-    .dc-dot { color:var(--accent); font-size:12px; }
-    .dc-domain { font-size:13px; font-weight:600; color:var(--text); flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-    .dc-count { font-size:11px; color:var(--text-dim); }
-    .dc-bar { height:5px; background:var(--bg-elevated); border-radius:999px; overflow:hidden; margin-bottom:12px; }
-    .dc-fill { height:100%; background:linear-gradient(90deg,var(--accent),var(--cyan)); transition:width 250ms var(--ease); }
-    .dc-list { display:flex; flex-direction:column; gap:6px; }
+    /* One block per domain; its phases lay out as a wrapping row of cards.
+       auto-fill with a min column width keeps the wrapped cards aligned to the
+       same columns as the first row, rather than stretching to fill the gap. */
+    .domain-block { margin-bottom:var(--space-6); }
+    .db-head {
+      display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+      padding-bottom:var(--space-2); margin-bottom:var(--space-3);
+      border-bottom:1px solid var(--border);
+    }
+    .db-dot { color:var(--accent); font-size:12px; }
+    .db-domain { font-size:var(--text-lg); font-weight:var(--weight-semibold); color:var(--text); min-width:0; overflow-wrap:anywhere; }
+    .db-count { font-size:var(--text-sm); color:var(--text-dim); }
+    .db-bar { flex:1 1 140px; min-width:120px; height:5px; background:var(--bg-elevated); border-radius:var(--radius-pill); overflow:hidden; }
+    .db-fill { height:100%; background:linear-gradient(90deg,var(--accent),var(--cyan)); transition:width 250ms var(--ease); }
+    .domain-block.db-active .db-domain { color:var(--text); }
+
+    .phase-row { display:grid; grid-template-columns:repeat(auto-fill,minmax(250px,1fr)); gap:var(--space-3); align-items:start; }
+    .phase-card {
+      background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius-lg);
+      padding:var(--space-3) var(--space-4); box-shadow:var(--shadow);
+      display:flex; flex-direction:column; gap:var(--space-2); min-width:0;
+    }
+    .phase-card.pc-running { border-color:var(--sev-high-border); }
+    .phase-card.pc-idle { opacity:.6; }
+    .pc-head { display:flex; align-items:center; justify-content:space-between; gap:var(--space-2); }
+    .pc-index { font-size:var(--text-xs); letter-spacing:.08em; text-transform:uppercase; color:var(--text-dim); }
+    .pc-count { font-size:var(--text-sm); color:var(--text-dim); }
+    .pc-name { font-size:var(--text-base); font-weight:var(--weight-semibold); color:var(--text); line-height:1.3; overflow-wrap:anywhere; }
+    .pc-bar { height:3px; background:var(--bg-elevated); border-radius:var(--radius-pill); overflow:hidden; }
+    .pc-fill { height:100%; background:var(--accent); transition:width 250ms var(--ease); }
+    .pc-empty { font-size:var(--text-sm); color:var(--text-faint); }
+    .pc-tools { list-style:none; display:flex; flex-direction:column; gap:var(--space-1); margin:0; padding:0; }
     .progress-header { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:12px; }
     .header-right { display:flex; align-items:center; gap:16px; }
     .page-title { font-family:var(--font-head); font-size:22px; font-weight:700; margin-bottom:4px; }
@@ -127,21 +190,22 @@ type ProgressRow = ScanProgressEvent & { key: string };
     .phase-banner { display:flex; align-items:center; gap:10px; background:var(--accent-glow); border:1px solid var(--accent-border); border-radius:var(--radius-lg); padding:var(--space-3) var(--space-4); margin-bottom:var(--space-4); font-family:var(--font-sans); font-size:var(--text-base); color:var(--accent); }
     .phase-banner small { display:block; margin-top:2px; font-family:var(--font-mono); color:var(--text-dim); font-size:10px; }
     .phase-done { opacity:.85; }
-    .progress-list { display:flex; flex-direction:column; gap:6px; margin-bottom:20px; }
-    .progress-item { display:flex; align-items:flex-start; gap:10px; background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius); padding:10px 14px; transition:border-color 150ms; }
-    .pi-running { border-color:var(--sev-high-border); }
-    .pi-done, .pi-completed { border-color:var(--accent-border); }
-    .pi-error, .pi-failed { border-color:var(--sev-critical-border); }
-    .pi-icon { width:20px; text-align:center; flex-shrink:0; padding-top:1px; }
+    /* Tool rows sit inside a phase card, so they drop the card chrome and the
+       horizontal padding that would nest one box inside another. */
+    .progress-item { display:flex; align-items:flex-start; gap:var(--space-2); padding:5px 0; border-top:1px solid var(--border); }
+    .progress-item:first-child { border-top:none; }
+    .pi-icon { width:16px; display:inline-flex; justify-content:center; flex-shrink:0; padding-top:2px; }
     .pi-check { color:var(--accent); font-weight:700; }
     .pi-x { color:var(--sev-critical); font-weight:700; }
     .pi-skip { color:var(--text-faint); }
-    .pi-main { flex:1; min-width:0; }
-    .pi-line { display:flex; align-items:center; gap:8px; min-width:0; }
-    .pi-tool { font-family:var(--font-mono); font-size:12px; min-width:132px; }
+    .pi-error .pi-tool, .pi-failed .pi-tool { color:var(--sev-critical); }
+    .pi-skipped .pi-tool, .pi-cancelled .pi-tool { color:var(--text-dim); }
+    .pi-main { flex:1; min-width:0; display:flex; flex-direction:column; }
+    .pi-line { display:flex; align-items:baseline; gap:var(--space-2); min-width:0; }
+    .pi-tool { font-family:var(--font-mono); font-size:12px; flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .pi-domain { font-family:var(--font-mono); font-size:10px; color:var(--text-faint); max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-    .pi-msg { margin-top:3px; font-size:12px; color:var(--text-dim); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-    .pi-count { font-family:var(--font-mono); font-size:11px; color:var(--cyan); margin-left:auto; }
+    .pi-msg { font-size:var(--text-sm); color:var(--text-dim); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .pi-count { font-family:var(--font-mono); font-size:var(--text-sm); color:var(--cyan); flex-shrink:0; }
     .done-banner { display:flex; align-items:center; justify-content:space-between; padding:14px 18px; border-radius:var(--radius-lg); border:1px solid; }
     .done-ok { background:var(--accent-glow); border-color:var(--accent-border); color:var(--accent); }
     .done-err { background:var(--sev-critical-surface); border-color:var(--sev-critical-border); color:var(--sev-critical); }
@@ -184,25 +248,71 @@ export class ScanProgressComponent implements OnInit, OnDestroy {
   });
 
   /**
-   * Group progress rows by domain so a multi-domain scan renders as one card per
-   * domain instead of a single ever-growing stacked list. Each group carries its
-   * own completed/total counts for a per-domain progress bar.
+   * Group progress into one block per domain, and within it one card per phase.
+   *
+   * A scan runs the same ordered phases against every in-scope domain, so a flat
+   * list per domain grew into a single tall column that pushed the later domains
+   * off-screen and gave no sense of which stage the scan was at. Phases are the
+   * natural unit here: each is a bounded set of tools with its own progress, so
+   * they lay out as a wrapping row of cards the operator can scan across.
+   *
+   * Phases the engine announced but had no selected tools for are kept, greyed,
+   * so the stages always read in the same order for every domain.
    */
   private static readonly TERMINAL = ['done', 'completed', 'error', 'failed', 'skipped', 'cancelled'];
-  domainGroups = computed(() => {
-    const groups = new Map<string, ProgressRow[]>();
+
+  /** `__phase__` announcements, keyed by domain and phase index. */
+  private phaseMeta = signal<PhaseMeta[]>([]);
+
+  domainGroups = computed<DomainGroup[]>(() => {
+    const rowsByDomain = new Map<string, ProgressRow[]>();
     for (const ev of this.events()) {
-      const key = ev.domain || 'general';
-      if (!groups.has(key)) groups.set(key, []);
-      groups.get(key)!.push(ev);
+      const domain = ev.domain || 'general';
+      if (!rowsByDomain.has(domain)) rowsByDomain.set(domain, []);
+      rowsByDomain.get(domain)!.push(ev);
     }
-    return [...groups.entries()].map(([domain, rows]) => ({
-      domain,
-      rows,
-      done: rows.filter(r => ScanProgressComponent.TERMINAL.includes(r.status)).length,
-      total: rows.length,
-      running: rows.some(r => r.status === 'running'),
-    }));
+
+    const metaByDomain = new Map<string, PhaseMeta[]>();
+    for (const meta of this.phaseMeta()) {
+      if (!metaByDomain.has(meta.domain)) metaByDomain.set(meta.domain, []);
+      metaByDomain.get(meta.domain)!.push(meta);
+    }
+
+    const domains = new Set([...rowsByDomain.keys(), ...metaByDomain.keys()]);
+    return [...domains].map(domain => {
+      const rows = rowsByDomain.get(domain) || [];
+      const announced = metaByDomain.get(domain) || [];
+
+      // Every phase index seen for this domain, from announcements or tool rows.
+      const indices = new Set<number>([
+        ...announced.map(meta => meta.index),
+        ...rows.map(row => row.phase_index ?? 0),
+      ]);
+
+      const phases: PhaseGroup[] = [...indices].sort((a, b) => a - b).map(index => {
+        const phaseRows = rows.filter(row => (row.phase_index ?? 0) === index);
+        // Prefer the engine's own announcement: handoff events carry a phase
+        // label that does not always match the phase definition.
+        const name = announced.find(meta => meta.index === index)?.name
+          || phaseRows.find(row => !!row.phase)?.phase
+          || `Phase ${index}`;
+        const done = phaseRows.filter(row => ScanProgressComponent.TERMINAL.includes(row.status)).length;
+        const total = phaseRows.length;
+        return {
+          index, name, rows: phaseRows, done, total,
+          percent: total ? Math.round((done / total) * 100) : 0,
+          running: phaseRows.some(row => row.status === 'running'),
+        };
+      });
+
+      const done = phases.reduce((sum, phase) => sum + phase.done, 0);
+      const total = phases.reduce((sum, phase) => sum + phase.total, 0);
+      return {
+        domain, phases, done, total,
+        percent: total ? Math.round((done / total) * 100) : 0,
+        running: phases.some(phase => phase.running),
+      };
+    });
   });
 
   private es?: EventSource;
@@ -279,10 +389,10 @@ export class ScanProgressComponent implements OnInit, OnDestroy {
     }
 
     if (ev.tool === '__phase__') {
-      if (ev.status === 'running') this.currentPhase.set(ev.message);
-      if (ev.status === 'done') this.currentPhase.set(ev.message);
+      if (ev.status === 'running' || ev.status === 'done') this.currentPhase.set(ev.message);
       this.phaseToolDone.set(ev.completed_tools || 0);
       this.phaseToolTotal.set(ev.total_tools || this.phaseToolTotal());
+      this.recordPhase(ev);
       return;
     }
 
@@ -302,6 +412,22 @@ export class ScanProgressComponent implements OnInit, OnDestroy {
 
     this.upsertEvent(ev);
     if (!ev.overall_total_tools) this.recalculateFinishedTools();
+  }
+
+  /** Remember a phase the engine announced, so its card renders in order even
+   *  when no tool in it was selected. */
+  private recordPhase(ev: ScanProgressEvent): void {
+    const domain = ev.domain || 'general';
+    const index = ev.phase_index ?? 0;
+    const name = ev.phase || ev.message || `Phase ${index}`;
+    this.phaseMeta.update(all => {
+      const at = all.findIndex(meta => meta.domain === domain && meta.index === index);
+      const next = { domain, index, name, status: ev.status };
+      if (at < 0) return [...all, next];
+      const copy = [...all];
+      copy[at] = next;
+      return copy;
+    });
   }
 
   private upsertEvent(ev: ScanProgressEvent) {
