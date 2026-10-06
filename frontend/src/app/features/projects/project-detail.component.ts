@@ -343,7 +343,7 @@ type ProjectTab = 'targets' | 'scan' | 'history';
     @media (max-width:700px) { .targets-layout { grid-template-columns:1fr; } }
     .add-target { display:flex; gap:8px; margin-bottom:14px; }
     .add-target .form-input { flex:1; }
-    .target-list { list-style:none; }
+    .target-list { list-style:none; max-height:var(--list-max-h); overflow-y:auto; overscroll-behavior:contain; }
     .target-item { display:flex; align-items:center; gap:8px; padding:8px 0; border-bottom:1px solid var(--border); }
     .target-item:last-child { border-bottom:none; }
     .target-domain { font-family:var(--font-mono); font-size:12px; flex:1; }

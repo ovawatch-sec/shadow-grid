@@ -163,11 +163,12 @@ interface PhaseMeta { domain: string; index: number; name: string; status: strin
     .db-fill { height:100%; background:linear-gradient(90deg,var(--accent),var(--cyan)); transition:width 250ms var(--ease); }
     .domain-block.db-active .db-domain { color:var(--text); }
 
-    .phase-row { display:grid; grid-template-columns:repeat(auto-fill,minmax(250px,1fr)); gap:var(--space-3); align-items:start; }
+    .phase-row { display:grid; grid-template-columns:repeat(auto-fill,minmax(250px,1fr)); gap:var(--space-3); align-items:stretch; }
     .phase-card {
       background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius-lg);
       padding:var(--space-3) var(--space-4); box-shadow:var(--shadow);
-      display:flex; flex-direction:column; gap:var(--space-2); min-width:0;
+      display:flex; flex-direction:column; gap:var(--space-2);
+      min-width:0; max-height:var(--card-max-h);
     }
     .phase-card.pc-running { border-color:var(--sev-high-border); }
     .phase-card.pc-idle { opacity:.6; }
@@ -178,7 +179,12 @@ interface PhaseMeta { domain: string; index: number; name: string; status: strin
     .pc-bar { height:3px; background:var(--bg-elevated); border-radius:var(--radius-pill); overflow:hidden; }
     .pc-fill { height:100%; background:var(--accent); transition:width 250ms var(--ease); }
     .pc-empty { font-size:var(--text-sm); color:var(--text-faint); }
-    .pc-tools { list-style:none; display:flex; flex-direction:column; gap:var(--space-1); margin:0; padding:0; }
+    /* The tool list is the only part that grows, so it takes the scroll and the
+       phase header and bar stay pinned to the card. */
+    .pc-tools {
+      list-style:none; display:flex; flex-direction:column; gap:var(--space-1);
+      margin:0; padding:0; min-height:0; overflow-y:auto; overscroll-behavior:contain;
+    }
     .progress-header { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:12px; }
     .header-right { display:flex; align-items:center; gap:16px; }
     .page-title { font-family:var(--font-head); font-size:22px; font-weight:700; margin-bottom:4px; }
