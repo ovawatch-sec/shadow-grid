@@ -1,6 +1,8 @@
-import { Component, inject } from "@angular/core";
+import { Component, HostListener, inject, signal } from "@angular/core";
+import { takeUntilDestroyed } from "@angular/core/rxjs-interop";
+import { filter } from "rxjs/operators";
 import { CommonModule } from "@angular/common";
-import { RouterOutlet, RouterLink, RouterLinkActive, Router } from "@angular/router";
+import { RouterOutlet, RouterLink, RouterLinkActive, Router, NavigationEnd } from "@angular/router";
 import { AuthService } from "./core/services/auth.service";
 import { ThemeService } from "./core/services/theme.service";
 
@@ -10,8 +12,23 @@ import { ThemeService } from "./core/services/theme.service";
   imports: [CommonModule, RouterOutlet, RouterLink, RouterLinkActive],
   template: `
     @if (auth.authenticated()) {
+      <a class="skip-link" href="#main">Skip to content</a>
       <div class="shell">
-        <aside class="sidebar">
+        <header class="topbar">
+          <button class="menu-btn" type="button" (click)="menuOpen.set(true)"
+            aria-label="Open navigation" aria-controls="app-nav" [attr.aria-expanded]="menuOpen()">
+            <svg viewBox="0 0 24 24" class="nav-ico" aria-hidden="true" focusable="false"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+          </button>
+          <img class="brand-mark brand-mark--sm" src="assets/shadow-grid-mark.png" alt="" />
+          <span class="brand-name">Shadow<span class="brand-accent">Grid</span></span>
+        </header>
+
+        @if (menuOpen()) {
+          <div class="nav-scrim" (click)="menuOpen.set(false)"></div>
+        }
+
+        <aside class="sidebar" id="app-nav" [class.open]="menuOpen()">
+          <button class="drawer-close" type="button" (click)="menuOpen.set(false)" aria-label="Close navigation">✕</button>
           <div class="brand">
             <img class="brand-mark" src="assets/shadow-grid-mark.png" alt="ShadowGrid" />
             <div class="brand-text">
@@ -20,55 +37,57 @@ import { ThemeService } from "./core/services/theme.service";
             </div>
           </div>
 
-          <nav class="nav">
-            <a class="nav-link" routerLink="/dashboard" routerLinkActive="active">
-              <svg viewBox="0 0 24 24" class="nav-ico"><path d="M3 3h8v8H3zM13 3h8v5h-8zM13 10h8v11h-8zM3 13h8v8H3z"/></svg>
-              <span>Dashboard</span>
+          <nav class="nav" aria-label="Main">
+            <a class="nav-link" routerLink="/dashboard" routerLinkActive="active" ariaCurrentWhenActive="page" title="Dashboard">
+              <svg viewBox="0 0 24 24" class="nav-ico" aria-hidden="true" focusable="false"><path d="M3 3h8v8H3zM13 3h8v5h-8zM13 10h8v11h-8zM3 13h8v8H3z"/></svg>
+              <span class="nav-label">Dashboard</span>
             </a>
-            <a class="nav-link" routerLink="/projects" routerLinkActive="active">
-              <svg viewBox="0 0 24 24" class="nav-ico"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
-              <span>Programs</span>
+            <a class="nav-link" routerLink="/projects" routerLinkActive="active" ariaCurrentWhenActive="page" title="Programs">
+              <svg viewBox="0 0 24 24" class="nav-ico" aria-hidden="true" focusable="false"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+              <span class="nav-label">Programs</span>
             </a>
-            <a class="nav-link" routerLink="/assets" routerLinkActive="active">
-              <svg viewBox="0 0 24 24" class="nav-ico"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="9"/><path d="M12 3v6M12 15v6M3 12h6M15 12h6"/></svg>
-              <span>Assets</span>
+            <a class="nav-link" routerLink="/assets" routerLinkActive="active" ariaCurrentWhenActive="page" title="Assets">
+              <svg viewBox="0 0 24 24" class="nav-ico" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="9"/><path d="M12 3v6M12 15v6M3 12h6M15 12h6"/></svg>
+              <span class="nav-label">Assets</span>
             </a>
-            <a class="nav-link" routerLink="/findings" routerLinkActive="active">
-              <svg viewBox="0 0 24 24" class="nav-ico"><path d="M12 3l9 17H3z"/><path d="M12 9v5M12 17h.01"/></svg>
-              <span>Findings</span>
+            <a class="nav-link" routerLink="/findings" routerLinkActive="active" ariaCurrentWhenActive="page" title="Findings">
+              <svg viewBox="0 0 24 24" class="nav-ico" aria-hidden="true" focusable="false"><path d="M12 3l9 17H3z"/><path d="M12 9v5M12 17h.01"/></svg>
+              <span class="nav-label">Findings</span>
             </a>
-            <a class="nav-link" routerLink="/changes" routerLinkActive="active">
-              <svg viewBox="0 0 24 24" class="nav-ico"><path d="M4 7h11M12 4l3 3-3 3M20 17H9M12 14l-3 3 3 3"/></svg>
-              <span>Changes</span>
+            <a class="nav-link" routerLink="/changes" routerLinkActive="active" ariaCurrentWhenActive="page" title="Changes">
+              <svg viewBox="0 0 24 24" class="nav-ico" aria-hidden="true" focusable="false"><path d="M4 7h11M12 4l3 3-3 3M20 17H9M12 14l-3 3 3 3"/></svg>
+              <span class="nav-label">Changes</span>
             </a>
-            <a class="nav-link" routerLink="/activity" routerLinkActive="active">
-              <svg viewBox="0 0 24 24" class="nav-ico"><path d="M3 12h4l3 8 4-16 3 8h4"/></svg>
-              <span>Assessments</span>
+            <a class="nav-link" routerLink="/activity" routerLinkActive="active" ariaCurrentWhenActive="page" title="Assessments">
+              <svg viewBox="0 0 24 24" class="nav-ico" aria-hidden="true" focusable="false"><path d="M3 12h4l3 8 4-16 3 8h4"/></svg>
+              <span class="nav-label">Assessments</span>
             </a>
-            <a class="nav-link" routerLink="/settings" routerLinkActive="active">
-              <svg viewBox="0 0 24 24" class="nav-ico"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/></svg>
-              <span>Settings</span>
+            <a class="nav-link" routerLink="/settings" routerLinkActive="active" ariaCurrentWhenActive="page" title="Settings">
+              <svg viewBox="0 0 24 24" class="nav-ico" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/></svg>
+              <span class="nav-label">Settings</span>
             </a>
           </nav>
 
           <div class="side-foot">
-            <button class="side-btn" (click)="theme.toggle()" [title]="theme.theme() === 'dark' ? 'Switch to light' : 'Switch to dark'">
+            <button class="side-btn" (click)="theme.toggle()"
+              [attr.aria-label]="theme.theme() === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'"
+              [title]="theme.theme() === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'">
               @if (theme.theme() === 'dark') {
-                <svg viewBox="0 0 24 24" class="nav-ico"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M1 12h2M21 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4"/></svg>
-                <span>Light mode</span>
+                <svg viewBox="0 0 24 24" class="nav-ico" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M1 12h2M21 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4"/></svg>
+                <span class="nav-label">Light mode</span>
               } @else {
-                <svg viewBox="0 0 24 24" class="nav-ico"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
-                <span>Dark mode</span>
+                <svg viewBox="0 0 24 24" class="nav-ico" aria-hidden="true" focusable="false"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+                <span class="nav-label">Dark mode</span>
               }
             </button>
-            <button class="side-btn" (click)="logout()">
-              <svg viewBox="0 0 24 24" class="nav-ico"><path d="M16 17l5-5-5-5M21 12H9M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/></svg>
-              <span>Sign out</span>
+            <button class="side-btn" (click)="logout()" title="Sign out" aria-label="Sign out">
+              <svg viewBox="0 0 24 24" class="nav-ico" aria-hidden="true" focusable="false"><path d="M16 17l5-5-5-5M21 12H9M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/></svg>
+              <span class="nav-label">Sign out</span>
             </button>
           </div>
         </aside>
 
-        <main class="main-content">
+        <main class="main-content" id="main">
           <router-outlet />
         </main>
       </div>
@@ -78,6 +97,8 @@ import { ThemeService } from "./core/services/theme.service";
   `,
   styles: [`
     .shell { display:flex; min-height:100vh; }
+    .skip-link { position:absolute; left:-9999px; top:0; z-index:300; padding:10px 16px; background:var(--bg-card); border:1px solid var(--accent); border-radius:var(--radius); color:var(--accent); }
+    .skip-link:focus { left:var(--space-3); top:var(--space-3); }
     .bare { min-height:100vh; display:flex; flex-direction:column; }
 
     .sidebar {
@@ -89,14 +110,14 @@ import { ThemeService } from "./core/services/theme.service";
     .brand { display:flex; align-items:center; gap:11px; padding:6px 8px 18px; }
     .brand-mark { width:38px; height:38px; border-radius:9px; }
     .brand-text { display:flex; flex-direction:column; line-height:1.15; }
-    .brand-name { font-family:var(--font-head); font-size:16px; font-weight:750; letter-spacing:-.01em; color:var(--text); }
+    .brand-name { font-family:var(--font-head); font-size:16px; font-weight:var(--weight-bold); letter-spacing:-.01em; color:var(--text); }
     .brand-accent { color:var(--accent); }
     .brand-tag { font-family:var(--font-mono); font-size:9.5px; letter-spacing:.14em; text-transform:uppercase; color:var(--text-dim); margin-top:2px; }
 
     .nav { display:flex; flex-direction:column; gap:3px; margin-top:4px; }
     .nav-link, .side-btn {
       display:flex; align-items:center; gap:11px; padding:9px 12px; border-radius:var(--radius);
-      font-family:var(--font-head); font-size:13.5px; font-weight:550; color:var(--text-dim);
+      font-family:var(--font-head); font-size:13.5px; font-weight:var(--weight-medium); color:var(--text-dim);
       transition:all 130ms ease; text-decoration:none; width:100%; text-align:left; background:none; border:none; cursor:pointer;
     }
     .nav-link:hover, .side-btn:hover { color:var(--text); background:var(--bg-hover); }
@@ -108,18 +129,42 @@ import { ThemeService } from "./core/services/theme.service";
 
     .main-content { flex:1; min-width:0; }
 
+    /* The top bar and the drawer affordances only exist on narrow screens. */
+    .topbar, .menu-btn, .drawer-close, .nav-scrim { display:none; }
+
     @media (max-width:820px) {
+      /* The previous narrow layout squeezed the whole sidebar into a
+         horizontally scrolling icon rail, which pushed the later destinations
+         and both footer controls off-screen with no indication they were
+         there. A drawer shows every destination, with its label. */
       .shell { flex-direction:column; }
-      .sidebar {
-        position:sticky; top:0; z-index:100; width:100%; height:auto; flex-direction:row;
-        align-items:center; padding:10px 14px; gap:6px; border-right:none; border-bottom:1px solid var(--border);
-        overflow-x:auto;
+
+      .topbar {
+        display:flex; align-items:center; gap:10px;
+        position:sticky; top:0; z-index:100; padding:10px 14px;
+        background:var(--bg-card); border-bottom:1px solid var(--border);
       }
-      .brand { padding:0 8px 0 0; }
-      .brand-tag { display:none; }
-      .nav { flex-direction:row; margin-top:0; }
-      .nav-link span, .side-btn span { display:none; }
-      .side-foot { margin-top:0; margin-left:auto; flex-direction:row; border-top:none; padding-top:0; }
+      .menu-btn, .drawer-close {
+        display:flex; align-items:center; justify-content:center;
+        width:36px; height:36px; border-radius:var(--radius); color:var(--text-dim);
+      }
+      .menu-btn:hover, .drawer-close:hover { color:var(--text); background:var(--bg-hover); }
+      .brand-mark--sm { width:26px; height:26px; border-radius:6px; }
+      .topbar .brand-name { font-family:var(--font-sans); font-size:15px; font-weight:var(--weight-bold); }
+
+      .nav-scrim { display:block; position:fixed; inset:0; z-index:150; background:var(--scrim); }
+
+      .sidebar {
+        position:fixed; top:0; left:0; z-index:200; height:100dvh; width:min(280px,86vw);
+        transform:translateX(-100%); transition:transform 180ms var(--ease);
+        box-shadow:var(--shadow-lg); overflow-y:auto;
+      }
+      .sidebar.open { transform:none; }
+      .drawer-close { position:absolute; top:14px; right:12px; font-size:18px; }
+    }
+
+    @media (max-width:820px) and (prefers-reduced-motion: reduce) {
+      .sidebar { transition:none; }
     }
   `],
 })
@@ -128,7 +173,24 @@ export class AppComponent {
   theme = inject(ThemeService);
   private router = inject(Router);
 
+  /** Narrow-screen navigation drawer. Ignored by the desktop layout. */
+  menuOpen = signal(false);
+
+  constructor() {
+    // Close on navigation, so following a link does not leave the drawer
+    // covering the page it just opened.
+    this.router.events
+      .pipe(filter(event => event instanceof NavigationEnd), takeUntilDestroyed())
+      .subscribe(() => this.menuOpen.set(false));
+  }
+
+  @HostListener('document:keydown.escape')
+  closeMenu(): void {
+    this.menuOpen.set(false);
+  }
+
   logout(): void {
+    this.menuOpen.set(false);
     this.auth.logout();
     this.router.navigate(['/login']);
   }

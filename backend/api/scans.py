@@ -100,6 +100,19 @@ async def create_scan(body: ScanCreate, background_tasks: BackgroundTasks):
     return _public_scan(scan)
 
 
+@router.get("/")
+async def list_all_scans():
+    """Every assessment across every program, newest first.
+
+    The cross-program activity feed previously rebuilt this client-side by
+    listing programs and then fetching each program's scans, which cost 1+N
+    requests on every poll.
+    """
+    scans = await _get_storage().list_all_scans()
+    scans.sort(key=lambda scan: scan.created_at, reverse=True)
+    return [_public_scan(scan) for scan in scans]
+
+
 @router.get("/{project_id}/list")
 async def list_scans(project_id: str):
     return [_public_scan(scan) for scan in await _get_storage().list_scans(project_id)]

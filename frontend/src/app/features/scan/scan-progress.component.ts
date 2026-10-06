@@ -1,7 +1,8 @@
-import { Component, OnInit, OnDestroy, NgZone, signal, computed } from '@angular/core';
+import { Component, DestroyRef, OnInit, OnDestroy, NgZone, inject, signal, computed, effect } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { ApiService } from '../../core/services/api.service';
+import { poll } from '../../core/http/poll';
 import { ScanProgressEvent } from '../../core/models';
 
 type ProgressRow = ScanProgressEvent & { key: string };
@@ -37,9 +38,12 @@ type ProgressRow = ScanProgressEvent & { key: string };
         </div>
       </div>
 
-      <div class="overall-progress">
+      <div class="overall-progress" role="progressbar" aria-label="Overall assessment progress"
+        [attr.aria-valuenow]="overallPercent()" aria-valuemin="0" aria-valuemax="100">
         <div class="overall-fill" [style.width.%]="overallPercent()"></div>
       </div>
+      <!-- Polite region so completion is announced without stealing focus. -->
+      <p class="sr-only" aria-live="polite">{{liveSummary()}}</p>
 
       @if (currentPhase()) {
         <div class="phase-banner" [class.phase-done]="done()">
@@ -102,20 +106,16 @@ type ProgressRow = ScanProgressEvent & { key: string };
     </div>
   `,
   styles: [`
-    .page { padding:32px; max-width:1240px; margin:0 auto; }
-    .breadcrumb { display:flex; align-items:center; gap:8px; font-size:13px; color:var(--text-dim); margin-bottom:20px; }
     .domain-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(340px,1fr)); gap:14px; margin-bottom:20px; }
     .domain-card { background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius-lg); padding:14px 16px; box-shadow:var(--shadow); }
-    .domain-card.dc-active { border-color:rgba(251,155,63,.4); }
+    .domain-card.dc-active { border-color:var(--sev-high-border); }
     .dc-head { display:flex; align-items:center; gap:10px; margin-bottom:10px; }
     .dc-dot { color:var(--accent); font-size:12px; }
     .dc-domain { font-size:13px; font-weight:600; color:var(--text); flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .dc-count { font-size:11px; color:var(--text-dim); }
     .dc-bar { height:5px; background:var(--bg-elevated); border-radius:999px; overflow:hidden; margin-bottom:12px; }
-    .dc-fill { height:100%; background:linear-gradient(90deg,var(--accent),var(--cyan)); transition:width 250ms ease; }
+    .dc-fill { height:100%; background:linear-gradient(90deg,var(--accent),var(--cyan)); transition:width 250ms var(--ease); }
     .dc-list { display:flex; flex-direction:column; gap:6px; }
-    .breadcrumb a { color:var(--accent); }
-    .sep { color:var(--text-faint); }
     .progress-header { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:12px; }
     .header-right { display:flex; align-items:center; gap:16px; }
     .page-title { font-family:var(--font-head); font-size:22px; font-weight:700; margin-bottom:4px; }
@@ -123,15 +123,15 @@ type ProgressRow = ScanProgressEvent & { key: string };
     .overall-box span { color:var(--accent); font-size:20px; font-weight:700; }
     .overall-box small { color:var(--text-dim); font-size:11px; }
     .overall-progress { height:8px; background:var(--bg-elevated); border:1px solid var(--border); border-radius:999px; overflow:hidden; margin-bottom:16px; }
-    .overall-fill { height:100%; background:linear-gradient(90deg, rgba(0,232,122,.55), rgba(0,191,255,.75)); transition:width 250ms ease; }
-    .phase-banner { display:flex; align-items:center; gap:10px; background:rgba(0,232,122,.07); border:1px solid rgba(0,232,122,.2); border-radius:var(--radius-lg); padding:12px 16px; margin-bottom:16px; font-family:var(--font-head); font-size:13px; color:var(--accent); }
+    .overall-fill { height:100%; background:linear-gradient(90deg,var(--accent),var(--cyan)); transition:width 250ms var(--ease); }
+    .phase-banner { display:flex; align-items:center; gap:10px; background:var(--accent-glow); border:1px solid var(--accent-border); border-radius:var(--radius-lg); padding:var(--space-3) var(--space-4); margin-bottom:var(--space-4); font-family:var(--font-sans); font-size:var(--text-base); color:var(--accent); }
     .phase-banner small { display:block; margin-top:2px; font-family:var(--font-mono); color:var(--text-dim); font-size:10px; }
     .phase-done { opacity:.85; }
     .progress-list { display:flex; flex-direction:column; gap:6px; margin-bottom:20px; }
     .progress-item { display:flex; align-items:flex-start; gap:10px; background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius); padding:10px 14px; transition:border-color 150ms; }
-    .pi-running { border-color:rgba(255,147,64,.3); }
-    .pi-done, .pi-completed { border-color:rgba(0,232,122,.25); }
-    .pi-error, .pi-failed { border-color:rgba(255,71,87,.25); }
+    .pi-running { border-color:var(--sev-high-border); }
+    .pi-done, .pi-completed { border-color:var(--accent-border); }
+    .pi-error, .pi-failed { border-color:var(--sev-critical-border); }
     .pi-icon { width:20px; text-align:center; flex-shrink:0; padding-top:1px; }
     .pi-check { color:var(--accent); font-weight:700; }
     .pi-x { color:var(--sev-critical); font-weight:700; }
@@ -143,8 +143,8 @@ type ProgressRow = ScanProgressEvent & { key: string };
     .pi-msg { margin-top:3px; font-size:12px; color:var(--text-dim); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .pi-count { font-family:var(--font-mono); font-size:11px; color:var(--cyan); margin-left:auto; }
     .done-banner { display:flex; align-items:center; justify-content:space-between; padding:14px 18px; border-radius:var(--radius-lg); border:1px solid; }
-    .done-ok { background:rgba(0,232,122,.08); border-color:rgba(0,232,122,.3); color:var(--accent); }
-    .done-err { background:rgba(255,71,87,.08); border-color:rgba(255,71,87,.3); color:var(--sev-critical); }
+    .done-ok { background:var(--accent-glow); border-color:var(--accent-border); color:var(--accent); }
+    .done-err { background:var(--sev-critical-surface); border-color:var(--sev-critical-border); color:var(--sev-critical); }
   `]
 })
 export class ScanProgressComponent implements OnInit, OnDestroy {
@@ -160,6 +160,14 @@ export class ScanProgressComponent implements OnInit, OnDestroy {
   phaseToolTotal = signal(0);
   totalTools = signal(0);
   completedTools = signal(0);
+
+  /** Single sentence describing the current state, for the live region. */
+  liveSummary = computed(() => {
+    if (this.done()) return this.finalTitle();
+    const phase = this.currentPhase();
+    const base = `${this.completedTools()} of ${this.totalTools()} tools finished`;
+    return phase ? `${phase}. ${base}.` : `${base}.`;
+  });
 
   overallPercent = computed(() => {
     const total = this.totalTools();
@@ -198,23 +206,36 @@ export class ScanProgressComponent implements OnInit, OnDestroy {
   });
 
   private es?: EventSource;
-  private pollHandle?: number;
+  private readonly statusCheck: ReturnType<typeof poll<import('../../core/models').Scan>>;
 
-  constructor(private route: ActivatedRoute, private api: ApiService, private zone: NgZone) {}
+  constructor(private route: ActivatedRoute, private api: ApiService, private zone: NgZone) {
+    this.scanId = this.route.snapshot.paramMap.get('id')!;
+
+    // SSE carries the live detail; this poll is the safety net for a dropped or
+    // proxied-away stream. It stops once the scan is terminal and never runs
+    // while the tab is hidden.
+    this.statusCheck = poll({
+      request: () => this.api.getScan(this.scanId),
+      intervalMs: 5000,
+      while: () => !this.done(),
+    });
+    effect(() => {
+      const scan = this.statusCheck.value();
+      if (!scan) return;
+      this.totalTools.update(current => Math.max(current, scan.tools?.length || 0));
+      if (['completed', 'failed', 'cancelled'].includes(scan.status)) this.markDone(scan.status);
+    }, { allowSignalWrites: true });
+
+    // Close the stream with the component even if the scan never terminates.
+    inject(DestroyRef).onDestroy(() => this.es?.close());
+  }
 
   ngOnInit() {
-    this.scanId = this.route.snapshot.paramMap.get('id')!;
-    this.api.getScan(this.scanId).subscribe({
-      next: scan => this.totalTools.set(scan.tools?.length || 0),
-      error: () => {}
-    });
     this.openStream();
-    this.pollHandle = window.setInterval(() => this.checkScanStatus(), 5000);
   }
 
   ngOnDestroy() {
     this.es?.close();
-    if (this.pollHandle) window.clearInterval(this.pollHandle);
   }
 
   cancelScan() {
@@ -222,7 +243,7 @@ export class ScanProgressComponent implements OnInit, OnDestroy {
     if (!confirm('Cancel this scan? Running tools will be stopped.')) return;
     this.cancelling.set(true);
     this.api.cancelScan(this.scanId).subscribe({
-      next: () => { this.cancelling.set(false); this.checkScanStatus(); },
+      next: () => { this.cancelling.set(false); this.markDone('cancelled'); },
       error: () => { this.cancelling.set(false); },
     });
   }
@@ -246,8 +267,9 @@ export class ScanProgressComponent implements OnInit, OnDestroy {
       });
     };
 
-    // Never mark the scan complete just because SSE had a network/proxy hiccup.
-    this.es.onerror = () => this.zone.run(() => this.checkScanStatus());
+    // Never mark the scan complete just because SSE had a network/proxy hiccup;
+    // the status poll above is the authority on whether the scan actually ended.
+    this.es.onerror = () => this.zone.run(() => this.statusCheck.refresh());
   }
 
   private applyEvent(ev: ScanProgressEvent) {
@@ -308,24 +330,12 @@ export class ScanProgressComponent implements OnInit, OnDestroy {
     this.totalTools.set(Math.max(this.totalTools(), rows.length));
   }
 
-  private checkScanStatus() {
-    if (this.done()) return;
-    this.api.getScan(this.scanId).subscribe({
-      next: scan => {
-        if (['completed', 'failed', 'cancelled'].includes(scan.status)) {
-          this.markDone(scan.status);
-        }
-      },
-      error: () => {}
-    });
-  }
-
   private markDone(status: string) {
+    if (this.done()) return;
     this.finalStatus.set(status);
     this.done.set(true);
     this.failed.set(status === 'failed' || status === 'cancelled');
     this.es?.close();
-    if (this.pollHandle) window.clearInterval(this.pollHandle);
     this.recalculateFinishedTools();
   }
 }

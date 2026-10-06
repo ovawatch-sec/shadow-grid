@@ -1,21 +1,33 @@
-import { Component, OnInit, OnDestroy, signal, computed, AfterViewInit } from '@angular/core';
+import { Component, OnDestroy, signal, computed, effect, inject, viewChild, type ElementRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { ScrollingModule } from '@angular/cdk/scrolling';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../core/services/api.service';
-import { InventoryDelta, InventorySnapshot, ToolResult } from '../../core/models';
-import Chart from 'chart.js/auto';
+import { ThemeService } from '../../core/services/theme.service';
+import { poll, type Poll } from '../../core/http/poll';
+import { EmptyStateComponent, PagerComponent, SortHeaderComponent, StatCardComponent, createSort } from '../../shared/ui';
+import { tabParam } from '../../core/router/tab-param';
+import { keyOf, withStableKeys } from '../../core/collections/stable-key';
+import { InventoryDelta, InventorySnapshot, Scan, ToolResult } from '../../core/models';
+import { Chart } from 'chart.js';
+import {
+  chartPalette, registerCharts, severityChartConfig, toolChartConfig, SEVERITY_ORDER,
+} from '../../core/charts/chart-theme';
+
+/** Rows rendered per page in the large evidence tables. */
+const ROWS_PER_PAGE = { subdomains: 100, http: 100, vulns: 50 } as const;
 
 type TabId = 'overview'|'inventory'|'graph'|'changes'|'evidence'|'assessment'|'subdomains'|'dns'|'http'|'vulns'|'wordpress'|'urls'|'tech'|'emails'|'dorks'|'screenshots'|'ai';
 
 @Component({
   selector: 'sg-results',
   standalone: true,
-  imports: [CommonModule, RouterLink, FormsModule],
+  imports: [CommonModule, ScrollingModule, RouterLink, FormsModule, StatCardComponent, PagerComponent, EmptyStateComponent, SortHeaderComponent],
   templateUrl: './results.component.html',
   styleUrls: ['./results.component.scss'],
 })
-export class ResultsComponent implements OnInit, AfterViewInit, OnDestroy {
+export class ResultsComponent implements OnDestroy {
   scanId!: string;
   results = signal<ToolResult[]>([]);
   inventory = signal<InventorySnapshot | null>(null);
@@ -27,19 +39,30 @@ export class ResultsComponent implements OnInit, AfterViewInit, OnDestroy {
   deletingArtifacts = signal(false);
   cleanupMessage = signal('');
   cleanupError = signal('');
-  private pollHandle?: number;
-  activeTab = signal<TabId>('overview');
+  private readonly scanPoll: Poll<Scan>;
+  private readonly resultsPoll: Poll<ToolResult[]>;
+
   lightbox: any = null;
   subQ = signal('');
   subStatus = signal('all');
   subPage = signal(0);
   httpQ = signal('');
   httpStatus = signal('all');
+  httpPage = signal(0);
   vulnQ = signal('');
   vulnSev = signal('all');
+  vulnPage = signal(0);
   urlQ = signal('');
   urlSrc = signal('all');
-  urlPage = signal(0);
+
+  private static readonly ALL_TABS: readonly TabId[] = [
+    'overview', 'inventory', 'graph', 'changes', 'evidence', 'assessment',
+    'subdomains', 'dns', 'http', 'vulns', 'wordpress', 'urls', 'tech',
+    'emails', 'dorks', 'screenshots', 'ai',
+  ];
+  private tabs$ = tabParam<TabId>(ResultsComponent.ALL_TABS, 'overview');
+  /** Derived from the URL, so a results view is linkable and back-navigable. */
+  activeTab = this.tabs$.active;
 
   tabs = [
     {id:'overview' as TabId, label:'Overview'},
@@ -56,57 +79,90 @@ export class ResultsComponent implements OnInit, AfterViewInit, OnDestroy {
     {id:'emails',label:'Emails'}, {id:'dorks',label:'Dorks'}, {id:'screenshots',label:'Screenshots'}, {id:'ai',label:'AI analysis'},
   ];
   severities = ['all','critical','high','medium','low','info'];
+
+  // Column sorting. `th.th-sortable` is applied only to headers wired here, so
+  // the pointer affordance now matches what the header actually does.
+  subSort = createSort<'host' | 'source' | 'alive' | 'status' | 'title', any>({
+    host: row => row['host'],
+    source: row => row['source'],
+    alive: row => (row['alive'] ? 1 : 0),
+    status: row => Number(row['status']) || null,
+    title: row => row['title'],
+  });
+  httpSort = createSort<'url' | 'status' | 'title', any>({
+    url: row => row['url'],
+    status: row => Number(row['status']) || null,
+    title: row => row['title'],
+  });
+  toolSort = createSort<'tool' | 'domain' | 'category' | 'count' | 'elapsed', ToolResult>({
+    tool: row => row.tool,
+    domain: row => row.domain,
+    category: row => row.category,
+    count: row => row.count,
+    elapsed: row => row.elapsed_s,
+  });
+  sortedResults = computed(() => this.toolSort.apply(this.results()));
   COMMON_PORTS = new Set([80,443,8080,8443,22,21,25,3389,3306,5432,6379,27017]);
 
-  constructor(private route: ActivatedRoute, public api: ApiService) {}
+  private theme = inject(ThemeService);
+  private sevCanvas = viewChild<ElementRef<HTMLCanvasElement>>('sevCanvas');
+  private toolCanvas = viewChild<ElementRef<HTMLCanvasElement>>('toolCanvas');
+  private sevChart?: Chart<'doughnut'>;
+  private toolChart?: Chart<'bar'>;
 
-  ngOnInit() {
+  constructor(private route: ActivatedRoute, public api: ApiService) {
+    registerCharts();
     this.scanId = this.route.snapshot.paramMap.get('scanId')!;
-    this.api.getResults(this.scanId).subscribe({
-      next: rs => { this.results.set(rs); this.loading.set(false); this.initCharts(); },
-      error: () => this.loading.set(false),
+
+    // Results and status refresh in place while the assessment runs, so filters,
+    // sorting and pagination survive the update. Polling stops on its own once
+    // the scan reaches a terminal state, and pauses while the tab is hidden.
+    this.scanPoll = poll({
+      request: () => this.api.getScan(this.scanId),
+      intervalMs: 5000,
+      while: () => this.isLive(),
     });
-    // Watch scan status so the results table can be viewed and interacted with
-    // while the assessment is still running, refreshing data in place (T6).
-    this.refreshStatus();
+    this.resultsPoll = poll({
+      request: () => this.api.getResults(this.scanId),
+      intervalMs: 5000,
+      while: () => this.isLive(),
+    });
+
+    effect(() => {
+      const scan = this.scanPoll.value();
+      if (!scan) return;
+      const wasLive = this.isLive();
+      this.scanStatus.set(scan.status);
+      this.artifactsDeletedAt.set(scan.artifacts_deleted_at || null);
+      // Refresh the derived views once on the transition out of a live scan.
+      if (wasLive && !this.isLive()) this.refreshInventory();
+    }, { allowSignalWrites: true });
+
+    effect(() => {
+      const rows = this.resultsPoll.value();
+      if (!rows) return;
+      this.results.set(rows);
+      this.loading.set(false);
+    }, { allowSignalWrites: true });
+
     this.refreshInventory();
-    this.pollHandle = window.setInterval(() => this.tick(), 5000);
+    // One effect owns the chart lifecycle. It re-runs when the canvases enter or
+    // leave the DOM (tab switches), when the underlying data changes (results
+    // stream in while a scan runs), and when the theme flips — which is what the
+    // previous create-once-and-never-touch-again implementation could not do.
+    effect(() => this.renderCharts());
   }
 
   ngOnDestroy() {
-    if (this.pollHandle) window.clearInterval(this.pollHandle);
+    // Chart.js keeps canvases in a global registry and attaches resize
+    // observers; without an explicit destroy they leak on every navigation.
+    this.sevChart?.destroy();
+    this.toolChart?.destroy();
   }
 
   /** True while the underlying scan is still producing results. */
   isLive(): boolean {
     return this.scanStatus() === 'running' || this.scanStatus() === 'pending';
-  }
-
-  private tick() {
-    this.refreshStatus();
-    if (this.isLive()) {
-      // Re-fetch results without touching filter/sort/pagination signals, so the
-      // user keeps interacting while new rows stream in.
-      this.api.getResults(this.scanId).subscribe({
-        next: rs => { this.results.set(rs); this.initCharts(); },
-        error: () => {},
-      });
-    } else if (this.pollHandle) {
-      // Scan finished — one final refresh already happened; stop polling.
-      window.clearInterval(this.pollHandle);
-      this.pollHandle = undefined;
-    }
-  }
-
-  private refreshStatus() {
-    this.api.getScan(this.scanId).subscribe({
-      next: scan => {
-        this.scanStatus.set(scan.status);
-        this.artifactsDeletedAt.set(scan.artifacts_deleted_at || null);
-        if (!['running', 'pending'].includes(scan.status)) this.refreshInventory();
-      },
-      error: () => {},
-    });
   }
 
   private refreshInventory() {
@@ -140,11 +196,8 @@ export class ResultsComponent implements OnInit, AfterViewInit, OnDestroy {
     return [...counts.entries()].map(([type, count]) => ({type, count}));
   });
 
-  ngAfterViewInit() { setTimeout(() => this.initCharts(), 200); }
-
   setTab(t: TabId) {
-    this.activeTab.set(t);
-    setTimeout(() => this.initCharts(), 100);
+    this.tabs$.select(t);
   }
 
   /** True while the user is browsing the evidence landing page or one of its sources. */
@@ -214,8 +267,8 @@ export class ResultsComponent implements OnInit, AfterViewInit, OnDestroy {
   });
 
   aliveCount   = computed(() => this.subdomains().filter((s: any) => s['alive']).length);
-  ports        = computed(() => this.byTool('naabu'));
-  vulns        = computed(() => [
+  ports        = computed(() => withStableKeys(this.byTool('naabu'), p => keyOf(p['host'], p['port'])));
+  vulns        = computed(() => withStableKeys([
     ...this.byCategory('vuln'),
     ...(this.inventory()?.findings || [])
       .filter(finding => finding.tool === 'shodan')
@@ -227,19 +280,23 @@ export class ResultsComponent implements OnInit, AfterViewInit, OnDestroy {
         matched_at: String(finding.data['cve'] || ''),
         source: 'shodan',
       })),
-  ]);
-  urls         = computed(() => this.results().filter(r => r.category === 'url').flatMap(r => r.data));
-  screenshots  = computed(() => this.byTool('gowitness'));
-  dorks        = computed(() => this.byTool('google_dorks'));
-  emails       = computed(() => this.byTool('email_finder'));
-  wpFindings   = computed(() => this.byTool('wpscan'));
+  ], v => keyOf(v['template_id'], v['matched_at'], v['host'], v['name'])));
+  urls         = computed(() => withStableKeys(
+    this.results().filter(r => r.category === 'url').flatMap(r => r.data),
+    u => keyOf(u['url'], u['source'])));
+  screenshots  = computed(() => withStableKeys(this.byTool('gowitness'), s => keyOf(s['filename'], s['path'])));
+  dorks        = computed(() => withStableKeys(this.byTool('google_dorks'), d => keyOf(d['dork'], d['url'])));
+  emails       = computed(() => withStableKeys(this.byTool('email_finder'), e => keyOf(e['email'])));
+  wpFindings   = computed(() => withStableKeys(this.byTool('wpscan'),
+    f => keyOf(f['url'], f['wp_type'], f['component'], f['title'])));
   // One AI report per in-scope asset (each scanned domain produces its own row).
-  aiReports    = computed(() => this.byTool('ai_analysis'));
-  dnsRecords   = computed(() => this.byTool('dns_records'));
+  aiReports    = computed(() => withStableKeys(this.byTool('ai_analysis'), r => keyOf(r['domain'], r['title'])));
+  dnsRecords   = computed(() => withStableKeys(this.byTool('dns_records'),
+    r => keyOf(r['type'], r['record'], r['domain'])));
   zoneResults  = computed(() => this.byTool('zone_transfer'));
   whoisData    = computed(() => { const d = this.byTool('whois')[0]; return d ? d['whois'] : 'No WHOIS data'; });
-  asnRanges    = computed(() => this.byTool('asnmap'));
-  httpResults  = computed(() => this.byTool('httpx'));
+  asnRanges    = computed(() => withStableKeys(this.byTool('asnmap'), r => keyOf(r['cidr'])));
+  httpResults  = computed(() => withStableKeys(this.byTool('httpx'), h => keyOf(h['url'], h['host'])));
   toolErrors = computed(() => this.results().filter(result => !!result.error).length);
 
   techInventory = computed(() => {
@@ -268,11 +325,14 @@ export class ResultsComponent implements OnInit, AfterViewInit, OnDestroy {
 
     return rows;
   });
+  /** Sort is applied before paging, so it orders the whole result set. */
+  sortedSubs = computed(() => this.subSort.apply(this.filteredSubs()));
   pagedSubs = computed(() => {
     const page = this.subPage();
-    return this.filteredSubs().slice(page * 100, (page + 1) * 100);
+    const size = ROWS_PER_PAGE.subdomains;
+    return this.sortedSubs().slice(page * size, (page + 1) * size);
   });
-  totalSubPages = computed(() => Math.ceil(this.filteredSubs().length / 100));
+  totalSubPages = computed(() => Math.ceil(this.filteredSubs().length / ROWS_PER_PAGE.subdomains));
 
   filteredHttp = computed(() => {
     let rows = this.httpResults();
@@ -328,6 +388,34 @@ export class ResultsComponent implements OnInit, AfterViewInit, OnDestroy {
     return rows;
   });
 
+  sortedHttp = computed(() => this.httpSort.apply(this.filteredHttp()));
+  pagedHttp = computed(() => {
+    const size = ROWS_PER_PAGE.http;
+    const page = this.httpPage();
+    return this.sortedHttp().slice(page * size, (page + 1) * size);
+  });
+  totalHttpPages = computed(() => Math.ceil(this.filteredHttp().length / ROWS_PER_PAGE.http));
+
+  pagedVulns = computed(() => {
+    const size = ROWS_PER_PAGE.vulns;
+    const page = this.vulnPage();
+    return this.filteredVulns().slice(page * size, (page + 1) * size);
+  });
+  totalVulnPages = computed(() => Math.ceil(this.filteredVulns().length / ROWS_PER_PAGE.vulns));
+
+  /** Text equivalents of the two charts, exposed as the canvas aria-label. */
+  severityChartSummary = computed(() => {
+    const parts = SEVERITY_ORDER.map(level => `${this.sevCount(level)} ${level}`);
+    return `Severity distribution: ${parts.join(', ')}.`;
+  });
+  toolChartSummary = computed(() => {
+    const rows = this.chartToolRows();
+    if (rows.length === 0) return 'Results by tool: no tools have reported yet.';
+    return `Results by tool: ${rows.map(r => `${r.tool} ${r.count}`).join(', ')}.`;
+  });
+  private chartToolRows = computed(() =>
+    [...this.results()].sort((a, b) => b.count - a.count).slice(0, 12));
+
   urlSources = computed(() => {
     const m = new Map<string, number>();
     this.urls().forEach((u: any) => { const s = u['source']||'unknown'; m.set(s,(m.get(s)||0)+1); });
@@ -349,13 +437,14 @@ export class ResultsComponent implements OnInit, AfterViewInit, OnDestroy {
   // ── Filter setters: reset pagination whenever a filter changes ─────────
   setSubQ(value: string) { this.subQ.set(value); this.subPage.set(0); }
   setSubStatus(value: string) { this.subStatus.set(value); this.subPage.set(0); }
-  setHttpQ(value: string) { this.httpQ.set(value); }
-  setHttpStatus(value: string) { this.httpStatus.set(value); }
-  setVulnQ(value: string) { this.vulnQ.set(value); }
-  setVulnSev(value: string) { this.vulnSev.set(value); }
-  setUrlQ(value: string) { this.urlQ.set(value); this.urlPage.set(0); }
-  setUrlSrc(value: string) { this.urlSrc.set(value); this.urlPage.set(0); }
-  totalUrlPages(): number { return Math.ceil(this.filteredUrls().length / 200); }
+  setHttpQ(value: string) { this.httpQ.set(value); this.httpPage.set(0); }
+  setHttpStatus(value: string) { this.httpStatus.set(value); this.httpPage.set(0); }
+  setVulnQ(value: string) { this.vulnQ.set(value); this.vulnPage.set(0); }
+  setVulnSev(value: string) { this.vulnSev.set(value); this.vulnPage.set(0); }
+  setUrlQ(value: string) { this.urlQ.set(value); }
+  setUrlSrc(value: string) { this.urlSrc.set(value); }
+  /** cdkVirtualFor needs a TrackByFunction rather than a template expression. */
+  trackUrl = (_: number, row: Record<string, unknown>) => row['_key'] as string;
 
   // ── Helper methods ──────────────────────────────────────────────
   sevRank(f: any): number {
@@ -397,8 +486,8 @@ export class ResultsComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   // ── Export methods (no arrow functions in template) ─────────────
-  exportSubdomains()  { this.exportTxt(this.filteredSubs().map((s: any) => s['host']), 'subdomains.txt'); }
-  exportHttpUrls()    { this.exportTxt(this.filteredHttp().map((h: any) => h['url']), 'alive_urls.txt'); }
+  exportSubdomains()  { this.exportTxt(this.sortedSubs().map((s: any) => s['host']), 'subdomains.txt'); }
+  exportHttpUrls()    { this.exportTxt(this.sortedHttp().map((h: any) => h['url']), 'alive_urls.txt'); }
   exportAllUrls()     { this.exportTxt(this.filteredUrls().map((u: any) => u['url']), 'urls.txt'); }
   exportDorks()       { this.exportTxt(this.dorks().map((d: any) => d['dork']), 'google_dorks.txt'); }
   exportEmails()      { this.exportTxt(this.emails().map((e: any) => e['email']), 'emails.txt'); }
@@ -433,33 +522,53 @@ export class ResultsComponent implements OnInit, AfterViewInit, OnDestroy {
 
   techBarWidth(count: number): string { return ((count / this.maxTech()) * 100) + '%'; }
 
-  initCharts() {
-    const sevCanvas  = document.getElementById('chart-sev')  as HTMLCanvasElement;
-    const toolCanvas = document.getElementById('chart-tools') as HTMLCanvasElement;
-    if (sevCanvas && !(sevCanvas as any)._chartInstance) {
-      const counts = this.severities.filter(s => s !== 'all').map(s => this.sevCount(s));
-      const c = new Chart(sevCanvas, {
-        type:'doughnut',
-        data:{ labels:['Critical','High','Medium','Low','Info'],
-          datasets:[{data:counts, backgroundColor:['#ff4757','#ff8c42','#ffc22a','#00bcd4','#78909c'],
-          borderColor:'#0b1628', borderWidth:3}]},
-        options:{responsive:true, maintainAspectRatio:false, cutout:'62%',
-          plugins:{legend:{position:'right', labels:{color:'#c4d4eb', font:{size:11}}}}}
-      });
-      (sevCanvas as any)._chartInstance = c;
+  /**
+   * Create, update, or tear down the overview charts.
+   *
+   * Reading `theme.theme()` registers this effect as a dependency of the active
+   * theme, so a light/dark switch rebuilds both charts with freshly resolved
+   * token colours instead of leaving dark-only hex values on a light surface.
+   */
+  private renderCharts(): void {
+    const themeKey = this.theme.theme();
+    const sevEl = this.sevCanvas()?.nativeElement;
+    const toolEl = this.toolCanvas()?.nativeElement;
+    const palette = chartPalette();
+
+    if (!sevEl) {
+      this.sevChart?.destroy();
+      this.sevChart = undefined;
+    } else {
+      const counts = SEVERITY_ORDER.map(level => this.sevCount(level));
+      if (!this.sevChart || this.sevChart.canvas !== sevEl || this.sevThemeKey !== themeKey) {
+        this.sevChart?.destroy();
+        this.sevChart = new Chart(sevEl, severityChartConfig(counts, palette));
+        this.sevThemeKey = themeKey;
+      } else {
+        this.sevChart.data.datasets[0].data = counts;
+        this.sevChart.update('none');
+      }
     }
-    if (toolCanvas && !(toolCanvas as any)._chartInstance) {
-      const r = this.results().slice(0,12);
-      const c = new Chart(toolCanvas, {
-        type:'bar',
-        data:{ labels:r.map(x => x.tool),
-          datasets:[{label:'Results', data:r.map(x => x.count),
-          backgroundColor:'rgba(0,232,122,.5)', borderColor:'#00e87a', borderWidth:1, borderRadius:4}]},
-        options:{indexAxis:'y', responsive:true, maintainAspectRatio:false,
-          plugins:{legend:{display:false}},
-          scales:{x:{grid:{color:'#1a2e4a'}, ticks:{color:'#60789a'}}, y:{ticks:{color:'#c4d4eb'}}}}
-      });
-      (toolCanvas as any)._chartInstance = c;
+
+    if (!toolEl) {
+      this.toolChart?.destroy();
+      this.toolChart = undefined;
+    } else {
+      const rows = this.chartToolRows();
+      const labels = rows.map(r => r.tool);
+      const values = rows.map(r => r.count);
+      if (!this.toolChart || this.toolChart.canvas !== toolEl || this.toolThemeKey !== themeKey) {
+        this.toolChart?.destroy();
+        this.toolChart = new Chart(toolEl, toolChartConfig(labels, values, palette));
+        this.toolThemeKey = themeKey;
+      } else {
+        this.toolChart.data.labels = labels;
+        this.toolChart.data.datasets[0].data = values;
+        this.toolChart.update('none');
+      }
     }
   }
+
+  private sevThemeKey = '';
+  private toolThemeKey = '';
 }

@@ -3,11 +3,12 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../core/services/api.service';
 import { SystemStatus, ToolApiKeysConfig } from '../../core/models';
+import { EmptyStateComponent } from '../../shared/ui';
 
 @Component({
   selector: 'sg-settings',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, EmptyStateComponent],
   template: `
     <div class="page">
       <h1 class="page-title">Settings</h1>
@@ -145,7 +146,7 @@ import { SystemStatus, ToolApiKeysConfig } from '../../core/models';
           @if (missingTools().length) {
             <details><summary>{{missingTools().length}} unavailable scanners</summary><div class="tool-health">@for (tool of missingTools(); track tool.name) { <div><span class="badge badge-error">{{tool.name}}</span><span>{{tool.reason}}</span></div> }</div></details>
           }
-        } @else { <div class="empty-state" style="padding:20px"><div class="spinner-sm"></div><span>Checking system health…</span></div> }
+        } @else { <sg-empty-state loading compact message="Checking system health…" /> }
       </div>
 
       <div class="card" style="max-width:960px;margin-top:16px">
@@ -159,14 +160,12 @@ import { SystemStatus, ToolApiKeysConfig } from '../../core/models';
     </div>
   `,
   styles: [`
-    .page { padding:32px; max-width:1200px; margin:0 auto; }
-    .page-title { font-family:var(--font-head); font-size:24px; font-weight:700; }
     .settings-grid { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:16px; align-items:start; }
     .ai-card { grid-column:1 / -1; max-width:720px; }
-    .section-title { font-family:var(--font-head); font-weight:600; margin-bottom:4px; }
+    .section-title { font-family:var(--font-sans); font-weight:var(--weight-semibold); margin-bottom:var(--space-1); }
     .section-copy { font-size:12px; color:var(--text-dim); margin-bottom:20px; }
     .toggle-row { display:flex; align-items:center; justify-content:space-between; cursor:pointer; }
-    input[type=checkbox] { width:18px; height:18px; accent-color:var(--accent); }
+    input[type=checkbox] { width:18px; height:18px; }
     .separator { font-size:11px; color:var(--text-faint); margin:-12px 0 16px; text-align:center; }
     .hint { font-size:11px; color:var(--text-dim); }
     .two-col { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:12px; }

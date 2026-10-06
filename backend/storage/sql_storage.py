@@ -302,6 +302,14 @@ class SqlStorage(BaseStorage):
             "SELECT payload FROM scans WHERE project_id=? ORDER BY id", (project_id,), Scan
         )
 
+    async def list_all_scans(self) -> list[Scan]:
+        """Every scan in one query, for the cross-program activity views.
+
+        The per-project call fanned out to one request per program, so the
+        dashboard issued 1+N round trips on every poll.
+        """
+        return await self._load_all("SELECT payload FROM scans ORDER BY id", (), Scan)
+
     async def delete_scan(self, scan_id: str, project_id: str) -> None:
         scan = await self.get_scan(scan_id)
         if scan:

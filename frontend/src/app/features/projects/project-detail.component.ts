@@ -1,9 +1,11 @@
 
-import { Component, OnInit, signal, computed } from '@angular/core';
+import { Component, HostListener, OnInit, signal, computed } from '@angular/core';
 import { CommonModule, DatePipe } from '@angular/common';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../core/services/api.service';
+import { EmptyStateComponent, ModalComponent } from '../../shared/ui';
+import { tabParam } from '../../core/router/tab-param';
 import { Project, Target, Scan, ToolInfo, ScanSchedule } from '../../core/models';
 
 const DEFAULT_TOOLS = [
@@ -34,10 +36,12 @@ const TOOL_GROUPS: Record<string, string[]> = {
 
 interface CustomHeaderEntry { name: string; value: string; }
 
+type ProjectTab = 'targets' | 'scan' | 'history';
+
 @Component({
   selector: 'sg-project-detail',
   standalone: true,
-  imports: [CommonModule, RouterLink, FormsModule],
+  imports: [CommonModule, RouterLink, FormsModule, ModalComponent, EmptyStateComponent],
   template: `
     <div class="page">
       <!-- Breadcrumb -->
@@ -90,14 +94,15 @@ interface CustomHeaderEntry { name: string; value: string; }
         </div>
 
         <!-- Tabs -->
-        <div class="tab-bar">
-          <button class="tab-btn" [class.active]="tab==='targets'" (click)="tab='targets'">Scope</button>
-          <button class="tab-btn" [class.active]="tab==='scan'" (click)="tab='scan'">New Assessment</button>
-          <button class="tab-btn" [class.active]="tab==='history'" (click)="tab='history'">Assessments</button>
+        <div class="tab-bar" role="tablist" aria-label="Program sections">
+          @for (entry of TABS; track entry.id) {
+            <button class="tab-btn" role="tab" [attr.aria-selected]="tab() === entry.id"
+              [class.active]="tab() === entry.id" (click)="selectTab(entry.id)">{{entry.label}}</button>
+          }
         </div>
 
         <!-- Targets -->
-        @if (tab === 'targets') {
+        @if (tab() === 'targets') {
           <div class="targets-layout">
             <div class="card">
               <div class="section-head">
@@ -109,14 +114,14 @@ interface CustomHeaderEntry { name: string; value: string; }
                 <button class="btn btn-primary btn-sm" (click)="addTarget(false)">Add</button>
               </div>
               @if (inscope().length === 0) {
-                <div class="empty-state" style="padding:24px"><div class="empty-icon" style="font-size:24px">⊡</div><p>No targets yet</p></div>
+                <sg-empty-state icon="⊡" message="No targets yet" compact />
               } @else {
                 <ul class="target-list">
                   @for (t of inscope(); track t.id) {
                     <li class="target-item">
                       <span class="target-domain">{{t.domain}}</span>
                       <span class="badge badge-alive">In-Scope</span>
-                      <button class="btn btn-ghost btn-sm" (click)="removeTarget(t)">✕</button>
+                      <button class="btn btn-ghost btn-sm" (click)="removeTarget(t)" [attr.aria-label]="'Remove ' + t.domain">✕</button>
                     </li>
                   }
                 </ul>
@@ -132,14 +137,14 @@ interface CustomHeaderEntry { name: string; value: string; }
                 <button class="btn btn-outline btn-sm" (click)="addTarget(true)">Add OOS</button>
               </div>
               @if (oos().length === 0) {
-                <div class="empty-state" style="padding:24px"><p>No OOS rules</p></div>
+                <sg-empty-state message="No OOS rules" compact />
               } @else {
                 <ul class="target-list">
                   @for (t of oos(); track t.id) {
                     <li class="target-item">
                       <span class="target-domain">{{t.domain}}</span>
                       <span class="badge badge-dead">OOS</span>
-                      <button class="btn btn-ghost btn-sm" (click)="removeTarget(t)">✕</button>
+                      <button class="btn btn-ghost btn-sm" (click)="removeTarget(t)" [attr.aria-label]="'Remove ' + t.domain">✕</button>
                     </li>
                   }
                 </ul>
@@ -149,7 +154,7 @@ interface CustomHeaderEntry { name: string; value: string; }
         }
 
         <!-- Launch Scan -->
-        @if (tab === 'scan') {
+        @if (tab() === 'scan') {
           <div class="card" style="max-width:720px">
             <h3 style="font-family:var(--font-head);font-weight:600;margin-bottom:16px">Configure Scan</h3>
 
@@ -245,26 +250,23 @@ interface CustomHeaderEntry { name: string; value: string; }
 
           <!-- Resume vs. new scan prompt -->
           @if (showResumePrompt()) {
-            <div class="modal-backdrop" (click)="cancelResumePrompt()">
-              <div class="modal-card" (click)="$event.stopPropagation()">
-                <h3>Previous scan detected</h3>
-                <p class="modal-text">
-                  This project already has scan results. Continue from the previous
-                  results (reuses finished tools, only runs new/missing ones), or start
-                  a fresh scan from scratch?
-                </p>
-                <div class="modal-actions">
-                  <button class="btn btn-outline btn-sm" (click)="cancelResumePrompt()">Cancel</button>
-                  <button class="btn btn-outline btn-sm" (click)="confirmLaunch(false)">Start New Scan</button>
-                  <button class="btn btn-primary btn-sm" (click)="confirmLaunch(true)">Continue Previous</button>
-                </div>
+            <sg-modal heading="Previous scan detected" (closed)="cancelResumePrompt()">
+              <p class="modal-text">
+                This project already has scan results. Continue from the previous
+                results (reuses finished tools, only runs new/missing ones), or start
+                a fresh scan from scratch?
+              </p>
+              <div class="modal-actions">
+                <button class="btn btn-outline btn-sm" (click)="cancelResumePrompt()">Cancel</button>
+                <button class="btn btn-outline btn-sm" (click)="confirmLaunch(false)">Start New Scan</button>
+                <button class="btn btn-primary btn-sm" (click)="confirmLaunch(true)">Continue Previous</button>
               </div>
-            </div>
+            </sg-modal>
           }
         }
 
         <!-- History -->
-        @if (tab === 'history') {
+        @if (tab() === 'history') {
           <div class="card">
             <div class="section-head">
               <span class="section-title">Assessments</span>
@@ -276,7 +278,7 @@ interface CustomHeaderEntry { name: string; value: string; }
               }
             </div>
             @if (scans().length === 0) {
-              <div class="empty-state"><div class="empty-icon">🛡️</div><p>No assessments run yet</p></div>
+              <sg-empty-state icon="🛡️" message="No assessments run yet" />
             } @else {
               <div class="table-wrap">
                 <table>
@@ -310,22 +312,19 @@ interface CustomHeaderEntry { name: string; value: string; }
 
         <!-- Clear project data confirmation -->
         @if (showClear()) {
-          <div class="modal-backdrop" (click)="showClear.set(false)">
-            <div class="modal-card" (click)="$event.stopPropagation()">
-              <h3>Clear program data?</h3>
-              <p class="modal-text">
-                This permanently deletes <strong>all {{scans().length}} assessment(s)</strong> for
-                <strong>{{project()?.name}}</strong> — including cancelled ones — and their results.
-                Any running assessment is stopped first. Targets and the program itself are kept.
-              </p>
-              <div class="modal-actions">
-                <button class="btn btn-ghost btn-sm" (click)="showClear.set(false)">Cancel</button>
-                <button class="btn btn-danger btn-sm" [disabled]="clearing()" (click)="clearData()">
-                  @if (clearing()) { <span class="spinner-sm"></span> } Clear all data
-                </button>
-              </div>
+          <sg-modal heading="Clear program data?" (closed)="showClear.set(false)">
+            <p class="modal-text">
+              This permanently deletes <strong>all {{scans().length}} assessment(s)</strong> for
+              <strong>{{project()?.name}}</strong> — including cancelled ones — and their results.
+              Any running assessment is stopped first. Targets and the program itself are kept.
+            </p>
+            <div class="modal-actions">
+              <button class="btn btn-ghost btn-sm" (click)="showClear.set(false)">Cancel</button>
+              <button class="btn btn-danger btn-sm" [disabled]="clearing()" (click)="clearData()">
+                @if (clearing()) { <span class="spinner-sm"></span> } Clear all data
+              </button>
             </div>
-          </div>
+          </sg-modal>
         }
       }
     </div>
@@ -337,13 +336,6 @@ interface CustomHeaderEntry { name: string; value: string; }
     .shortcut span { font-weight:650; }
     .shortcut b { font-size:10px; color:var(--text-dim); font-weight:500; }
     @media(max-width:700px){.project-shortcuts{grid-template-columns:1fr}}
-    .page { padding:32px; max-width:1200px; margin:0 auto; }
-    .breadcrumb { display:flex; align-items:center; gap:8px; font-size:13px; color:var(--text-dim); margin-bottom:20px; }
-    .breadcrumb a { color:var(--accent); }
-    .sep { color:var(--text-faint); }
-    .page-header { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:24px; }
-    .page-title { font-family:var(--font-head); font-size:24px; font-weight:700; }
-    .page-sub { color:var(--text-dim); font-size:13px; margin-top:4px; }
     .header-actions { display:flex; gap:8px; flex-shrink:0; flex-wrap:wrap; justify-content:flex-end; }
     .edit-form { max-width:560px; }
     .edit-actions { display:flex; gap:8px; justify-content:flex-end; }
@@ -363,7 +355,7 @@ interface CustomHeaderEntry { name: string; value: string; }
     .tool-chk:hover { border-color:var(--accent); }
     .tool-chk.unavail { opacity:.5; cursor:not-allowed; }
     .tool-name { font-family:var(--font-mono); font-size:12px; }
-    .ai-warning { flex-basis:100%; font-size:11px; color:var(--sev-medium); padding:4px 2px; }
+    .ai-warning { flex-basis:100%; font-size:var(--text-sm); color:var(--sev-medium); padding:var(--space-1) 2px; }
     .verification-option { display:flex; align-items:flex-start; gap:10px; margin:4px 0 18px; padding:12px; border:1px solid var(--border); border-radius:var(--radius); background:var(--bg-elevated); cursor:pointer; }
     .verification-option span { display:flex; flex-direction:column; gap:3px; font-size:12px; }
     .verification-option small { color:var(--text-dim); line-height:1.4; }
@@ -376,12 +368,6 @@ interface CustomHeaderEntry { name: string; value: string; }
     .header-row { display:grid;grid-template-columns:minmax(140px,.7fr) minmax(180px,1.3fr) auto;gap:8px;margin:8px 0; }
     .request-hint { display:block;font-size:10px;line-height:1.5;color:var(--text-dim);margin-top:5px; }
     @media(max-width:650px){.header-row{grid-template-columns:1fr}.header-row button{justify-self:start}}
-    input[type=checkbox] { accent-color:var(--accent); cursor:pointer; }
-    .modal-backdrop { position:fixed; inset:0; background:rgba(0,0,0,.6); display:flex; align-items:center; justify-content:center; z-index:200; }
-    .modal-card { background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius-lg); padding:24px; max-width:460px; width:90%; }
-    .modal-card h3 { font-family:var(--font-head); font-weight:600; margin-bottom:10px; }
-    .modal-text { color:var(--text-dim); font-size:13px; line-height:1.5; margin-bottom:20px; }
-    .modal-actions { display:flex; gap:8px; justify-content:flex-end; flex-wrap:wrap; }
   `]
 })
 export class ProjectDetailComponent implements OnInit {
@@ -400,7 +386,14 @@ export class ProjectDetailComponent implements OnInit {
   message = signal('');
   editName = '';
   editDesc = '';
-  tab = 'targets';
+  protected readonly TABS = [
+    { id: 'targets' as const, label: 'Scope' },
+    { id: 'scan' as const, label: 'New Assessment' },
+    { id: 'history' as const, label: 'Assessments' },
+  ];
+  private tabs$ = tabParam(this.TABS.map(entry => entry.id), 'targets');
+  tab = this.tabs$.active;
+  selectTab(id: ProjectTab): void { this.tabs$.select(id); }
   newTarget = '';
   newOos = '';
   customWordlist = '';
@@ -417,6 +410,12 @@ export class ProjectDetailComponent implements OnInit {
   get toolGroupEntries() { return Object.entries(TOOL_GROUPS); }
 
   isActiveTool(name: string): boolean { return ACTIVE_TOOLS.has(name); }
+
+  /** Escape leaves the inline edit form; sg-modal handles the dialogs itself. */
+  @HostListener('document:keydown.escape')
+  onEscape(): void {
+    if (this.editing() && !this.showResumePrompt() && !this.showClear()) this.cancelEdit();
+  }
 
   /** Hostnames the operator allowed credential headers to reach. */
   credentialHosts(): string[] {

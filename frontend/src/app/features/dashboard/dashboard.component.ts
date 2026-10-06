@@ -1,9 +1,10 @@
-import { Component, OnInit, OnDestroy, signal, computed, inject } from '@angular/core';
+import { Component, computed, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterLink } from '@angular/router';
 import { ScanActivityService, ActivityEntry } from '../../core/services/scan-activity.service';
 import { ApiService } from '../../core/services/api.service';
-import { PortfolioResponse } from '../../core/models';
+import { poll } from '../../core/http/poll';
+import { EmptyStateComponent, StatCardComponent } from '../../shared/ui';
 
 /**
  * Security-posture overview. Aggregates programs and their assessments into a
@@ -13,7 +14,7 @@ import { PortfolioResponse } from '../../core/models';
 @Component({
   selector: 'sg-dashboard',
   standalone: true,
-  imports: [CommonModule, RouterLink],
+  imports: [CommonModule, RouterLink, StatCardComponent, EmptyStateComponent],
   template: `
     <div class="page">
       <div class="page-header">
@@ -25,34 +26,23 @@ import { PortfolioResponse } from '../../core/models';
       </div>
 
       @if (loading()) {
-        <div class="empty-state"><div class="spinner-sm"></div><span>Loading posture…</span></div>
+        <sg-empty-state loading message="Loading posture…" />
       } @else {
         <div class="stat-grid">
-          <div class="stat-card accent">
-            <div class="stat-label">Programs</div>
-            <div class="stat-value green">{{programs()}}</div>
-            <div class="stat-sub">application scopes under management</div>
-          </div>
-          <div class="stat-card" [class.danger]="active() > 0">
-            <div class="stat-label">Active assessments</div>
-            <div class="stat-value" [class.orange]="active() > 0">{{active()}}</div>
-            <div class="stat-sub">{{active() > 0 ? 'scanning now' : 'idle'}}</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-label">Completed</div>
-            <div class="stat-value cyan">{{completed()}}</div>
-            <div class="stat-sub">finished assessments</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-label">Known assets</div>
-            <div class="stat-value">{{portfolio()?.summary?.assets || 0}}</div>
+          <sg-stat-card label="Programs" [value]="programs()" tone="green" accent
+            sub="application scopes under management" />
+          <sg-stat-card label="Active assessments" [value]="active()"
+            [tone]="active() > 0 ? 'orange' : 'default'" [danger]="active() > 0"
+            [sub]="active() > 0 ? 'scanning now' : 'idle'" />
+          <sg-stat-card label="Completed" [value]="completed()" tone="cyan" sub="finished assessments" />
+          <sg-stat-card label="Known assets" [value]="portfolio()?.summary?.assets || 0">
             <div class="stat-sub"><a routerLink="/assets">open inventory</a></div>
-          </div>
-          <div class="stat-card" [class.danger]="(portfolio()?.summary?.critical_high || 0) > 0">
-            <div class="stat-label">Critical / high</div>
-            <div class="stat-value" [class.red]="(portfolio()?.summary?.critical_high || 0) > 0">{{portfolio()?.summary?.critical_high || 0}}</div>
+          </sg-stat-card>
+          <sg-stat-card label="Critical / high" [value]="portfolio()?.summary?.critical_high || 0"
+            [tone]="(portfolio()?.summary?.critical_high || 0) > 0 ? 'red' : 'default'"
+            [danger]="(portfolio()?.summary?.critical_high || 0) > 0">
             <div class="stat-sub"><a routerLink="/findings">review findings</a></div>
-          </div>
+          </sg-stat-card>
         </div>
 
         <div class="section-head">
@@ -64,15 +54,13 @@ import { PortfolioResponse } from '../../core/models';
 
         @if (entries().length === 0) {
           <div class="card">
-            <div class="empty-state">
-              <div class="empty-icon">🛡️</div>
-              <h3>No assessments yet</h3>
-              <p>Create a program, add in-scope applications, and launch your first security assessment.</p>
+            <sg-empty-state icon="🛡️" heading="No assessments yet"
+              message="Create a program, add in-scope applications, and launch your first security assessment.">
               <a class="btn btn-primary" routerLink="/projects">Create a program</a>
-            </div>
+            </sg-empty-state>
           </div>
         } @else {
-          <div class="card" style="padding:8px 0">
+          <div class="card feed-card">
             @for (e of recent(); track e.scan.id) {
               <a class="feed-row" [routerLink]="rowLink(e)">
                 <span class="badge badge-{{e.scan.status}} feed-status">{{e.scan.status}}</span>
@@ -88,6 +76,7 @@ import { PortfolioResponse } from '../../core/models';
     </div>
   `,
   styles: [`
+    .feed-card { padding:var(--space-2) 0; }
     .feed-row { display:flex; align-items:center; gap:14px; padding:11px 20px; border-bottom:1px solid var(--border); transition:background 120ms; }
     .feed-row:last-child { border-bottom:none; }
     .feed-row:hover { background:var(--bg-hover); }
@@ -98,36 +87,21 @@ import { PortfolioResponse } from '../../core/models';
     @media (max-width:640px){ .feed-meta { display:none; } }
   `]
 })
-export class DashboardComponent implements OnInit, OnDestroy {
+export class DashboardComponent {
   private activityService = inject(ScanActivityService);
   private api = inject(ApiService);
 
-  entries = signal<ActivityEntry[]>([]);
-  loading = signal(true);
-  portfolio = signal<PortfolioResponse | null>(null);
-  private timer?: number;
+  private activityPoll = poll({ request: () => this.activityService.activity(), intervalMs: 8000 });
+  private portfolioPoll = poll({ request: () => this.api.getPortfolio(), intervalMs: 8000 });
+
+  entries = computed<ActivityEntry[]>(() => this.activityPoll.value() ?? []);
+  portfolio = computed(() => this.portfolioPoll.value() ?? null);
+  loading = computed(() => this.activityPoll.value() === undefined && !this.activityPoll.error());
 
   programs = computed(() => new Set(this.entries().map(e => e.project.id)).size);
   active = computed(() => this.entries().filter(e => ScanActivityService.isActive(e.scan)).length);
   completed = computed(() => this.entries().filter(e => e.scan.status === 'completed').length);
   recent = computed(() => this.entries().slice(0, 8));
-
-  ngOnInit() {
-    this.load();
-    this.timer = window.setInterval(() => this.load(), 8000);
-  }
-
-  ngOnDestroy() {
-    if (this.timer) window.clearInterval(this.timer);
-  }
-
-  private load() {
-    this.activityService.activity().subscribe({
-      next: entries => { this.entries.set(entries); this.loading.set(false); },
-      error: () => this.loading.set(false),
-    });
-    this.api.getPortfolio().subscribe({ next: portfolio => this.portfolio.set(portfolio), error: () => {} });
-  }
 
   rowLink(e: ActivityEntry): any[] {
     if (ScanActivityService.isActive(e.scan)) return ['/scan', e.scan.id, 'progress'];

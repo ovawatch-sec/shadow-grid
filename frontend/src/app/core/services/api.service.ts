@@ -54,6 +54,10 @@ export class ApiService {
   getScans(projectId: string): Observable<Scan[]> {
     return this.http.get<Scan[]>(`${this.base}/scans/${projectId}/list`);
   }
+  /** Every scan across every program, newest first — one request, not 1+N. */
+  getAllScans(): Observable<Scan[]> {
+    return this.http.get<Scan[]>(`${this.base}/scans/`);
+  }
   getScan(scanId: string): Observable<Scan> {
     return this.http.get<Scan>(`${this.base}/scans/${scanId}`);
   }

@@ -5,11 +5,12 @@ import { RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../core/services/api.service';
 import { Project } from '../../core/models';
+import { EmptyStateComponent } from '../../shared/ui';
 
 @Component({
   selector: 'sg-projects',
   standalone: true,
-  imports: [CommonModule, RouterLink, FormsModule],
+  imports: [CommonModule, RouterLink, FormsModule, EmptyStateComponent],
   template: `
     <div class="page">
       <div class="page-header">
@@ -17,22 +18,23 @@ import { Project } from '../../core/models';
           <h1 class="page-title">Programs</h1>
           <p class="page-sub">Application-security programs and their assessments</p>
         </div>
-        <button class="btn btn-primary" (click)="showCreate = !showCreate">
+        <button class="btn btn-primary" (click)="showCreate = !showCreate"
+          [attr.aria-expanded]="showCreate" aria-controls="new-program-panel">
           + New Program
         </button>
       </div>
 
       <!-- Create form -->
       @if (showCreate) {
-        <div class="card create-card">
+        <div class="card create-card" id="new-program-panel">
           <h3 class="create-title">New Program</h3>
           <div class="form-group">
-            <label class="form-label">Program Name</label>
-            <input class="form-input" [(ngModel)]="newName" placeholder="e.g. Acme Web Platform" />
+            <label class="form-label" for="new-program-name">Program Name</label>
+            <input id="new-program-name" class="form-input" [(ngModel)]="newName" placeholder="e.g. Acme Web Platform" />
           </div>
           <div class="form-group">
-            <label class="form-label">Description (optional)</label>
-            <textarea class="form-textarea" [(ngModel)]="newDesc" placeholder="Scope, environment, notes…"></textarea>
+            <label class="form-label" for="new-program-desc">Description (optional)</label>
+            <textarea id="new-program-desc" class="form-textarea" [(ngModel)]="newDesc" placeholder="Scope, environment, notes…"></textarea>
           </div>
           <div class="create-actions">
             <button class="btn btn-ghost" (click)="showCreate=false">Cancel</button>
@@ -42,19 +44,16 @@ import { Project } from '../../core/models';
       }
 
       @if (loading()) {
-        <div class="empty-state"><div class="spinner-sm"></div><span>Loading…</span></div>
+        <sg-empty-state loading message="Loading…" />
       } @else if (projects().length === 0) {
-        <div class="empty-state">
-          <div class="empty-icon">🛡️</div>
-          <h3>No programs yet</h3>
-          <p>Create your first application-security program to get started.</p>
-        </div>
+        <sg-empty-state icon="🛡️" heading="No programs yet"
+          message="Create your first application-security program to get started." />
       } @else {
         <div class="projects-grid">
           @for (p of projects(); track p.id) {
-            <div class="project-card" [routerLink]="['/projects', p.id]">
+            <a class="project-card" [routerLink]="['/projects', p.id]">
               <div class="pc-head">
-                <span class="pc-icon">▨</span>
+                <span class="pc-icon" aria-hidden="true">▨</span>
                 <span class="pc-name">{{p.name}}</span>
               </div>
               @if (p.description) {
@@ -64,26 +63,22 @@ import { Project } from '../../core/models';
                 <span class="pc-scans">{{p.scan_count}} assessment{{p.scan_count !== 1 ? 's' : ''}}</span>
                 <span class="pc-date">{{p.created_at | date:'mediumDate'}}</span>
               </div>
-            </div>
+            </a>
           }
         </div>
       }
     </div>
   `,
   styles: [`
-    .page { padding:32px; max-width:1200px; margin:0 auto; }
-    .page-header { display:flex; align-items:flex-start; justify-content:space-between; margin-bottom:28px; }
-    .page-title { font-family:var(--font-head); font-size:24px; font-weight:700; }
-    .page-sub { color:var(--text-dim); font-size:13px; margin-top:4px; }
     .create-card { margin-bottom:24px; max-width:560px; }
     .create-title { font-family:var(--font-head); font-size:15px; font-weight:600; margin-bottom:16px; }
     .create-actions { display:flex; gap:8px; justify-content:flex-end; margin-top:8px; }
     .projects-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:16px; }
-    .project-card { background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius-lg); padding:20px; cursor:pointer; transition:all 150ms; }
-    .project-card:hover { border-color:var(--accent); box-shadow:0 4px 20px rgba(0,232,122,.08); transform:translateY(-2px); }
+    .project-card { display:block; background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius-lg); padding:var(--space-5); cursor:pointer; color:var(--text); transition:border-color var(--duration-fast) var(--ease), transform var(--duration-fast) var(--ease), box-shadow var(--duration-fast) var(--ease); }
+    .project-card:hover { border-color:var(--accent); box-shadow:var(--shadow-lg); transform:translateY(-2px); text-decoration:none; }
     .pc-head { display:flex; align-items:center; gap:10px; margin-bottom:10px; }
     .pc-icon { font-size:18px; color:var(--accent); }
-    .pc-name { font-family:var(--font-head); font-size:15px; font-weight:600; }
+    .pc-name { font-family:var(--font-sans); font-size:var(--text-lg); font-weight:var(--weight-semibold); }
     .pc-desc { font-size:12px; color:var(--text-dim); margin-bottom:12px; line-height:1.5; }
     .pc-footer { display:flex; justify-content:space-between; font-size:11px; color:var(--text-dim); font-family:var(--font-mono); }
   `]
