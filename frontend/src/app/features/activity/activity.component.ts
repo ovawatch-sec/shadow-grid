@@ -1,7 +1,8 @@
-import { Component, OnInit, OnDestroy, signal, computed, inject } from '@angular/core';
+import { Component, computed, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterLink } from '@angular/router';
 import { ScanActivityService, ActivityEntry } from '../../core/services/scan-activity.service';
+import { poll } from '../../core/http/poll';
 
 /**
  * Cross-program scan activity board. Concurrent assessments render as discrete
@@ -106,30 +107,15 @@ import { ScanActivityService, ActivityEntry } from '../../core/services/scan-act
     .spin { display:inline-block; animation:spin .7s linear infinite; }
   `]
 })
-export class ActivityComponent implements OnInit, OnDestroy {
+export class ActivityComponent {
   private activityService = inject(ScanActivityService);
+  private feed = poll({ request: () => this.activityService.activity(), intervalMs: 6000 });
 
-  entries = signal<ActivityEntry[]>([]);
-  loading = signal(true);
-  private timer?: number;
+  entries = computed<ActivityEntry[]>(() => this.feed.value() ?? []);
+  loading = this.feed.loading;
 
   activeEntries = computed(() => this.entries().filter(e => ScanActivityService.isActive(e.scan)));
   recentEntries = computed(() => this.entries().filter(e => !ScanActivityService.isActive(e.scan)).slice(0, 24));
 
-  ngOnInit() {
-    this.load();
-    this.timer = window.setInterval(() => this.load(), 6000);
-  }
-
-  ngOnDestroy() {
-    if (this.timer) window.clearInterval(this.timer);
-  }
-
-  load() {
-    this.loading.set(true);
-    this.activityService.activity().subscribe({
-      next: entries => { this.entries.set(entries); this.loading.set(false); },
-      error: () => this.loading.set(false),
-    });
-  }
+  load(): void { this.feed.refresh(); }
 }

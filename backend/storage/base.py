@@ -37,6 +37,18 @@ class BaseStorage(ABC):
     @abstractmethod
     async def list_scans(self, project_id: str) -> list[Scan]: ...
 
+    async def list_all_scans(self) -> list[Scan]:
+        """Every scan across every program.
+
+        Concrete backends should override this with a single query. The default
+        walks the programs so that a backend which only implements the abstract
+        surface stays correct, just slower.
+        """
+        scans: list[Scan] = []
+        for project in await self.list_projects():
+            scans.extend(await self.list_scans(project.id))
+        return scans
+
     @abstractmethod
     async def delete_scan(self, scan_id: str, project_id: str) -> None:
         """Delete a scan record and all of its results. Idempotent."""

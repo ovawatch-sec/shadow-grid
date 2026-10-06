@@ -1,9 +1,9 @@
-import { Component, OnInit, OnDestroy, signal, computed, inject } from '@angular/core';
+import { Component, computed, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterLink } from '@angular/router';
 import { ScanActivityService, ActivityEntry } from '../../core/services/scan-activity.service';
 import { ApiService } from '../../core/services/api.service';
-import { PortfolioResponse } from '../../core/models';
+import { poll } from '../../core/http/poll';
 
 /**
  * Security-posture overview. Aggregates programs and their assessments into a
@@ -99,36 +99,21 @@ import { PortfolioResponse } from '../../core/models';
     @media (max-width:640px){ .feed-meta { display:none; } }
   `]
 })
-export class DashboardComponent implements OnInit, OnDestroy {
+export class DashboardComponent {
   private activityService = inject(ScanActivityService);
   private api = inject(ApiService);
 
-  entries = signal<ActivityEntry[]>([]);
-  loading = signal(true);
-  portfolio = signal<PortfolioResponse | null>(null);
-  private timer?: number;
+  private activityPoll = poll({ request: () => this.activityService.activity(), intervalMs: 8000 });
+  private portfolioPoll = poll({ request: () => this.api.getPortfolio(), intervalMs: 8000 });
+
+  entries = computed<ActivityEntry[]>(() => this.activityPoll.value() ?? []);
+  portfolio = computed(() => this.portfolioPoll.value() ?? null);
+  loading = computed(() => this.activityPoll.value() === undefined && !this.activityPoll.error());
 
   programs = computed(() => new Set(this.entries().map(e => e.project.id)).size);
   active = computed(() => this.entries().filter(e => ScanActivityService.isActive(e.scan)).length);
   completed = computed(() => this.entries().filter(e => e.scan.status === 'completed').length);
   recent = computed(() => this.entries().slice(0, 8));
-
-  ngOnInit() {
-    this.load();
-    this.timer = window.setInterval(() => this.load(), 8000);
-  }
-
-  ngOnDestroy() {
-    if (this.timer) window.clearInterval(this.timer);
-  }
-
-  private load() {
-    this.activityService.activity().subscribe({
-      next: entries => { this.entries.set(entries); this.loading.set(false); },
-      error: () => this.loading.set(false),
-    });
-    this.api.getPortfolio().subscribe({ next: portfolio => this.portfolio.set(portfolio), error: () => {} });
-  }
 
   rowLink(e: ActivityEntry): any[] {
     if (ScanActivityService.isActive(e.scan)) return ['/scan', e.scan.id, 'progress'];

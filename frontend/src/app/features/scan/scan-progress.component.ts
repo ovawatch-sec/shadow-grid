@@ -1,7 +1,8 @@
-import { Component, OnInit, OnDestroy, NgZone, signal, computed } from '@angular/core';
+import { Component, DestroyRef, OnInit, OnDestroy, NgZone, inject, signal, computed, effect } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { ApiService } from '../../core/services/api.service';
+import { poll } from '../../core/http/poll';
 import { ScanProgressEvent } from '../../core/models';
 
 type ProgressRow = ScanProgressEvent & { key: string };
@@ -205,23 +206,36 @@ export class ScanProgressComponent implements OnInit, OnDestroy {
   });
 
   private es?: EventSource;
-  private pollHandle?: number;
+  private readonly statusCheck: ReturnType<typeof poll<import('../../core/models').Scan>>;
 
-  constructor(private route: ActivatedRoute, private api: ApiService, private zone: NgZone) {}
+  constructor(private route: ActivatedRoute, private api: ApiService, private zone: NgZone) {
+    this.scanId = this.route.snapshot.paramMap.get('id')!;
+
+    // SSE carries the live detail; this poll is the safety net for a dropped or
+    // proxied-away stream. It stops once the scan is terminal and never runs
+    // while the tab is hidden.
+    this.statusCheck = poll({
+      request: () => this.api.getScan(this.scanId),
+      intervalMs: 5000,
+      while: () => !this.done(),
+    });
+    effect(() => {
+      const scan = this.statusCheck.value();
+      if (!scan) return;
+      this.totalTools.update(current => Math.max(current, scan.tools?.length || 0));
+      if (['completed', 'failed', 'cancelled'].includes(scan.status)) this.markDone(scan.status);
+    }, { allowSignalWrites: true });
+
+    // Close the stream with the component even if the scan never terminates.
+    inject(DestroyRef).onDestroy(() => this.es?.close());
+  }
 
   ngOnInit() {
-    this.scanId = this.route.snapshot.paramMap.get('id')!;
-    this.api.getScan(this.scanId).subscribe({
-      next: scan => this.totalTools.set(scan.tools?.length || 0),
-      error: () => {}
-    });
     this.openStream();
-    this.pollHandle = window.setInterval(() => this.checkScanStatus(), 5000);
   }
 
   ngOnDestroy() {
     this.es?.close();
-    if (this.pollHandle) window.clearInterval(this.pollHandle);
   }
 
   cancelScan() {
@@ -229,7 +243,7 @@ export class ScanProgressComponent implements OnInit, OnDestroy {
     if (!confirm('Cancel this scan? Running tools will be stopped.')) return;
     this.cancelling.set(true);
     this.api.cancelScan(this.scanId).subscribe({
-      next: () => { this.cancelling.set(false); this.checkScanStatus(); },
+      next: () => { this.cancelling.set(false); this.markDone('cancelled'); },
       error: () => { this.cancelling.set(false); },
     });
   }
@@ -253,8 +267,9 @@ export class ScanProgressComponent implements OnInit, OnDestroy {
       });
     };
 
-    // Never mark the scan complete just because SSE had a network/proxy hiccup.
-    this.es.onerror = () => this.zone.run(() => this.checkScanStatus());
+    // Never mark the scan complete just because SSE had a network/proxy hiccup;
+    // the status poll above is the authority on whether the scan actually ended.
+    this.es.onerror = () => this.zone.run(() => this.statusCheck.refresh());
   }
 
   private applyEvent(ev: ScanProgressEvent) {
@@ -315,24 +330,12 @@ export class ScanProgressComponent implements OnInit, OnDestroy {
     this.totalTools.set(Math.max(this.totalTools(), rows.length));
   }
 
-  private checkScanStatus() {
-    if (this.done()) return;
-    this.api.getScan(this.scanId).subscribe({
-      next: scan => {
-        if (['completed', 'failed', 'cancelled'].includes(scan.status)) {
-          this.markDone(scan.status);
-        }
-      },
-      error: () => {}
-    });
-  }
-
   private markDone(status: string) {
+    if (this.done()) return;
     this.finalStatus.set(status);
     this.done.set(true);
     this.failed.set(status === 'failed' || status === 'cancelled');
     this.es?.close();
-    if (this.pollHandle) window.clearInterval(this.pollHandle);
     this.recalculateFinishedTools();
   }
 }

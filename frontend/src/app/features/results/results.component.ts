@@ -1,10 +1,11 @@
-import { Component, OnInit, OnDestroy, signal, computed, effect, inject, viewChild, type ElementRef } from '@angular/core';
+import { Component, OnDestroy, signal, computed, effect, inject, viewChild, type ElementRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../core/services/api.service';
 import { ThemeService } from '../../core/services/theme.service';
-import { InventoryDelta, InventorySnapshot, ToolResult } from '../../core/models';
+import { poll, type Poll } from '../../core/http/poll';
+import { InventoryDelta, InventorySnapshot, Scan, ToolResult } from '../../core/models';
 import { Chart } from 'chart.js';
 import {
   chartPalette, registerCharts, severityChartConfig, toolChartConfig, SEVERITY_ORDER,
@@ -22,7 +23,7 @@ type TabId = 'overview'|'inventory'|'graph'|'changes'|'evidence'|'assessment'|'s
   templateUrl: './results.component.html',
   styleUrls: ['./results.component.scss'],
 })
-export class ResultsComponent implements OnInit, OnDestroy {
+export class ResultsComponent implements OnDestroy {
   scanId!: string;
   results = signal<ToolResult[]>([]);
   inventory = signal<InventorySnapshot | null>(null);
@@ -34,7 +35,8 @@ export class ResultsComponent implements OnInit, OnDestroy {
   deletingArtifacts = signal(false);
   cleanupMessage = signal('');
   cleanupError = signal('');
-  private pollHandle?: number;
+  private readonly scanPoll: Poll<Scan>;
+  private readonly resultsPoll: Poll<ToolResult[]>;
   activeTab = signal<TabId>('overview');
   lightbox: any = null;
   subQ = signal('');
@@ -75,6 +77,40 @@ export class ResultsComponent implements OnInit, OnDestroy {
 
   constructor(private route: ActivatedRoute, public api: ApiService) {
     registerCharts();
+    this.scanId = this.route.snapshot.paramMap.get('scanId')!;
+
+    // Results and status refresh in place while the assessment runs, so filters,
+    // sorting and pagination survive the update. Polling stops on its own once
+    // the scan reaches a terminal state, and pauses while the tab is hidden.
+    this.scanPoll = poll({
+      request: () => this.api.getScan(this.scanId),
+      intervalMs: 5000,
+      while: () => this.isLive(),
+    });
+    this.resultsPoll = poll({
+      request: () => this.api.getResults(this.scanId),
+      intervalMs: 5000,
+      while: () => this.isLive(),
+    });
+
+    effect(() => {
+      const scan = this.scanPoll.value();
+      if (!scan) return;
+      const wasLive = this.isLive();
+      this.scanStatus.set(scan.status);
+      this.artifactsDeletedAt.set(scan.artifacts_deleted_at || null);
+      // Refresh the derived views once on the transition out of a live scan.
+      if (wasLive && !this.isLive()) this.refreshInventory();
+    }, { allowSignalWrites: true });
+
+    effect(() => {
+      const rows = this.resultsPoll.value();
+      if (!rows) return;
+      this.results.set(rows);
+      this.loading.set(false);
+    }, { allowSignalWrites: true });
+
+    this.refreshInventory();
     // One effect owns the chart lifecycle. It re-runs when the canvases enter or
     // leave the DOM (tab switches), when the underlying data changes (results
     // stream in while a scan runs), and when the theme flips — which is what the
@@ -82,21 +118,7 @@ export class ResultsComponent implements OnInit, OnDestroy {
     effect(() => this.renderCharts());
   }
 
-  ngOnInit() {
-    this.scanId = this.route.snapshot.paramMap.get('scanId')!;
-    this.api.getResults(this.scanId).subscribe({
-      next: rs => { this.results.set(rs); this.loading.set(false); },
-      error: () => this.loading.set(false),
-    });
-    // Watch scan status so the results table can be viewed and interacted with
-    // while the assessment is still running, refreshing data in place (T6).
-    this.refreshStatus();
-    this.refreshInventory();
-    this.pollHandle = window.setInterval(() => this.tick(), 5000);
-  }
-
   ngOnDestroy() {
-    if (this.pollHandle) window.clearInterval(this.pollHandle);
     // Chart.js keeps canvases in a global registry and attaches resize
     // observers; without an explicit destroy they leak on every navigation.
     this.sevChart?.destroy();
@@ -106,33 +128,6 @@ export class ResultsComponent implements OnInit, OnDestroy {
   /** True while the underlying scan is still producing results. */
   isLive(): boolean {
     return this.scanStatus() === 'running' || this.scanStatus() === 'pending';
-  }
-
-  private tick() {
-    this.refreshStatus();
-    if (this.isLive()) {
-      // Re-fetch results without touching filter/sort/pagination signals, so the
-      // user keeps interacting while new rows stream in.
-      this.api.getResults(this.scanId).subscribe({
-        next: rs => { this.results.set(rs); },
-        error: () => {},
-      });
-    } else if (this.pollHandle) {
-      // Scan finished — one final refresh already happened; stop polling.
-      window.clearInterval(this.pollHandle);
-      this.pollHandle = undefined;
-    }
-  }
-
-  private refreshStatus() {
-    this.api.getScan(this.scanId).subscribe({
-      next: scan => {
-        this.scanStatus.set(scan.status);
-        this.artifactsDeletedAt.set(scan.artifacts_deleted_at || null);
-        if (!['running', 'pending'].includes(scan.status)) this.refreshInventory();
-      },
-      error: () => {},
-    });
   }
 
   private refreshInventory() {
