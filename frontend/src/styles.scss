@@ -60,7 +60,7 @@
      viewport as well as an absolute cap so a panel never grows taller than
      the screen on a short laptop display. */
   --table-max-h: min(62vh, 620px);
-  --card-max-h: min(46vh, 400px);
+  --card-max-h: min(34vh, 300px);
   --list-max-h: min(32vh, 240px);
 }
 

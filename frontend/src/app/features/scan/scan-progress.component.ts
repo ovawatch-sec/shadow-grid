@@ -171,7 +171,10 @@ interface PhaseMeta { domain: string; index: number; name: string; status: strin
       min-width:0; max-height:var(--card-max-h);
     }
     .phase-card.pc-running { border-color:var(--sev-high-border); }
-    .phase-card.pc-idle { opacity:.6; }
+    /* A phase with no selected tools has nothing to fill a stretched card with,
+       so it sizes to its content instead of holding open an empty box. It is
+       already de-emphasised, so the shorter card reads as deliberate. */
+    .phase-card.pc-idle { opacity:.6; align-self:start; }
     .pc-head { display:flex; align-items:center; justify-content:space-between; gap:var(--space-2); }
     .pc-index { font-size:var(--text-xs); letter-spacing:.08em; text-transform:uppercase; color:var(--text-dim); }
     .pc-count { font-size:var(--text-sm); color:var(--text-dim); }
@@ -297,8 +300,8 @@ export class ScanProgressComponent implements OnInit, OnDestroy {
 
       const phases: PhaseGroup[] = [...indices].sort((a, b) => a - b).map(index => {
         const phaseRows = rows.filter(row => (row.phase_index ?? 0) === index);
-        // Prefer the engine's own announcement: handoff events carry a phase
-        // label that does not always match the phase definition.
+        // Prefer the engine's own announcement: it is the only source for a
+        // phase that was skipped, which has no tool rows to read a name from.
         const name = announced.find(meta => meta.index === index)?.name
           || phaseRows.find(row => !!row.phase)?.phase
           || `Phase ${index}`;
