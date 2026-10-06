@@ -86,6 +86,21 @@ def _selected_tools(scan: Scan, phase: dict[str, object]) -> list[str]:
     return [t for t in phase["tools"] if t in requested]  # type: ignore[index]
 
 
+def phase_name(index: int) -> str:
+    """The canonical name of a phase, by its index.
+
+    Handoff events are emitted outside ``_run_phase`` and used to restate the
+    phase label as a literal, which let one drift: the alive-urls handoff
+    reported "HTTP Probing & Port Scanning" for phase 4 while the phase itself
+    is "HTTP, TLS & Port Validation". The progress UI groups by phase, so two
+    names for one index render as two phases. Look the name up instead.
+    """
+    for phase in PHASES:
+        if int(phase["index"]) == index:  # type: ignore[arg-type]
+            return str(phase["name"])
+    return f"Phase {index}"
+
+
 async def _emit(
     scan: Scan,
     storage: BaseStorage,
@@ -572,7 +587,7 @@ async def _run_phase(
     overall_total_tools: int,
 ) -> list[ToolResult | None]:
     index = int(phase["index"])
-    name = str(phase["name"])
+    name = phase_name(index)
     tools = _selected_tools(scan, phase)
     label = f"Phase {index}: {name}"
 
@@ -696,7 +711,7 @@ async def run_scan(
                     await _emit(
                         scan, storage, "subdomain-merge", "done",
                         f"Wrote {merged_path.name}", merged_count,
-                        domain=domain, phase="Subdomain Enumeration", phase_index=2,
+                        domain=domain, phase=phase_name(2), phase_index=2,
                         overall_completed_tools=overall_completed_ref["value"],
                         overall_total_tools=overall_total_tools,
                     )
@@ -705,7 +720,7 @@ async def run_scan(
                     await _emit(
                         scan, storage, "alive-subdomains", "done",
                         f"Wrote {alive_path.name}", alive_count,
-                        domain=domain, phase="DNS Resolution", phase_index=3,
+                        domain=domain, phase=phase_name(3), phase_index=3,
                         overall_completed_tools=overall_completed_ref["value"],
                         overall_total_tools=overall_total_tools,
                     )
@@ -721,7 +736,7 @@ async def run_scan(
                     await _emit(
                         scan, storage, "alive-urls", "done",
                         f"Wrote {urls_path.name}", urls_count,
-                        domain=domain, phase="HTTP Probing & Port Scanning", phase_index=4,
+                        domain=domain, phase=phase_name(4), phase_index=4,
                         overall_completed_tools=overall_completed_ref["value"],
                         overall_total_tools=overall_total_tools,
                     )

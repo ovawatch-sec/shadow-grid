@@ -110,7 +110,7 @@
 
 /* Attack graph */
 .graph-board { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: var(--space-3); margin-bottom: var(--space-4); align-items: start; }
-.graph-column { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: var(--space-3); }
+.graph-column { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: var(--space-3); max-height: var(--card-max-h); overflow-y: auto; overscroll-behavior: contain; }
 .graph-node { display: grid; grid-template-columns: 1fr auto; gap: 3px var(--space-2); padding: var(--space-2); margin-top: 7px; border: 1px solid var(--border); border-radius: var(--radius); font: var(--text-sm) var(--font-mono); overflow-wrap: anywhere; }
 .graph-node b { color: var(--accent); }
 .graph-node small { grid-column: 1 / -1; color: var(--sev-high); }

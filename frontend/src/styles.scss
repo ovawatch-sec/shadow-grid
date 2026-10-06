@@ -53,6 +53,15 @@
   --duration-fast: 140ms; --duration: 200ms; --ease: ease;
   --sidebar-w: 248px; --topbar-h: 60px;
   --page-max: 1240px; --page-pad: var(--space-8);
+
+  /* Height ceilings. Data volume here is unbounded — a scan can return 600
+     hosts or 40 — so panels are capped and scroll internally rather than
+     letting one long table set the page height. Expressed against the
+     viewport as well as an absolute cap so a panel never grows taller than
+     the screen on a short laptop display. */
+  --table-max-h: min(62vh, 620px);
+  --card-max-h: min(34vh, 300px);
+  --list-max-h: min(32vh, 240px);
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -247,10 +256,16 @@ input[type=checkbox] { accent-color: var(--accent); cursor: pointer; }
 .badge-tool { background: var(--bg-elevated); color: var(--cyan); border-color: var(--border); font-size: var(--text-xs); }
 
 /* ── Tables ── */
-.table-wrap { overflow-x: auto; width: 100%; }
+.table-wrap { overflow: auto; width: 100%; max-height: var(--table-max-h); overscroll-behavior: contain; }
+/* Opt out for a table short enough that a ceiling would only add a scrollbar. */
+.table-wrap--auto { max-height: none; }
 table { width: 100%; border-collapse: collapse; font-size: var(--text-base); }
 thead tr { border-bottom: 1px solid var(--border-bright); }
-thead { position: sticky; top: 0; z-index: 2; background: var(--bg-card); }
+/* Pinned while the body scrolls under it. The shadow separates the header
+   from rows passing beneath, which a border alone does not do once the table
+   scrolls. */
+thead { position: sticky; top: 0; z-index: 2; background: var(--bg-card); box-shadow: 0 1px 0 var(--border-bright); }
+thead tr { border-bottom: none; }
 th {
   padding: 10px var(--space-4); text-align: left; font-family: var(--font-mono);
   font-size: var(--text-xs); color: var(--text-dim); letter-spacing: .07em;
